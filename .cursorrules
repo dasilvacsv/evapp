@@ -1,0 +1,157 @@
+# Development Workflow Rules
+
+# IMPORTANT RULE
+DONT WASTE TIME ON TYPE ERRORS OR LINTER ERRORS THAT DONT AFFECT THE CORE FUNCITONALITY, I WILL HAVE TIME TO FIX THAT LATER
+u dont need to migrate for me i can run the commands so dont create migrations file of sql
+
+## 1. Types First
+1. Create types in `src/lib/types.d.ts` or feature-specific `types.ts`
+2. Follow existing patterns:
+   ```typescript
+   export interface SomeType {
+     id: string;
+     name: string;
+     status: "ACTIVE" | "INACTIVE";
+     createdAt: Date | null;
+     updatedAt: Date | null;
+   }
+   ```
+
+## 2. Database Schema
+1. Define schema in `src/db/schema.ts`
+2. Use drizzle-orm patterns:
+   ```typescript
+   export const someTable = pgTable("some_table", {
+     id: uuid("id").notNull().primaryKey().defaultRandom(),
+     name: varchar("name", { length: 255 }).notNull(),
+     status: statusEnum("status").default("ACTIVE"),
+     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+   });
+   ```
+
+## 3. Server Actions
+1. Create in `src/features/[feature]/actions.ts`
+2. Mark as server components:
+   ```typescript
+   'use server'
+   
+   import { db } from "@/db";
+   import { someTable } from "@/db/schema";
+   
+   export async function getSomeData() {
+     try {
+       const data = await db.select().from(someTable);
+       return { success: true, data };
+     } catch (error) {
+       return { success: false, error: 'Error message' };
+     }
+   }
+   ```
+
+## 4. Table Component
+1. Create in `src/features/[feature]/[feature]-table.tsx`
+2. Use TanStack Table pattern:
+   ```typescript
+   'use client'
+   
+   import { useReactTable, getCoreRowModel } from "@tanstack/react-table"
+   import { Table } from "@/components/ui/table"
+   
+   export function SomeTable({ data, columns }) {
+     const table = useReactTable({
+       data,
+       columns,
+       getCoreRowModel: getCoreRowModel(),
+     })
+     // ... render table
+   }
+   ```
+
+## 5. Form Component
+1. Create in `src/features/[feature]/[feature]-form.tsx`
+2. Use react-hook-form pattern:
+   ```typescript
+   'use client'
+   
+   import { useForm } from "react-hook-form"
+   import { Form } from "@/components/ui/form"
+   
+   export function SomeForm({ onSubmit }) {
+     const form = useForm({
+       defaultValues: {
+         // ...
+       }
+     })
+     // ... render form
+   }
+   ```
+
+## 6. Entry Point / Page
+1. Create in `src/app/(app)/[feature]/page.tsx`
+2. Fetch data and compose components:
+   ```typescript
+   import { getSomeData } from "@/features/some/actions"
+   import { SomeTable } from "@/features/some/some-table"
+   
+   export default async function SomePage() {
+     const { data } = await getSomeData()
+     return <SomeTable data={data} />
+   }
+   ```
+
+## 7. Error Handling
+1. Use try/catch in server actions
+2. Return consistent response format:
+   ```typescript
+   type ActionResponse<T> = {
+     success: boolean;
+     data?: T;
+     error?: string;
+   }
+   ```
+
+## 8. TypeScript Handling
+1. Initially ignore type errors during development:
+   - Use `@ts-ignore` or `@ts-expect-error` when needed
+   - Add proper types later in cleanup phase
+
+## 9. Component Organization
+1. Feature-first organization:
+   ```
+   src/
+     features/
+       [feature]/
+         types.ts
+         actions.ts
+         [feature]-table.tsx
+         [feature]-form.tsx
+         columns.tsx
+   ```
+
+## 10. Testing (Optional)
+We wont test anything forget it
+
+## Development Order
+1. Types & Schema
+2. Server Actions
+3. Table Component
+4. Form Component
+5. Page Component
+6. Type Cleanup
+7. Testing
+8. Documentation
+
+## Naming Conventions
+1. Files: kebab-case
+2. Components: PascalCase
+3. Functions: camelCase
+4. Types/Interfaces: PascalCase
+5. Database tables: snake_case
+
+## Code Style
+1. Use consistent formatting
+2. Follow existing patterns in codebase
+3. Use shadcn/ui components when available
+4. Implement proper error handling
+5. Add loading states

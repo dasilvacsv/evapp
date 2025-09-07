@@ -1,0 +1,28 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/CVS": true,
+        "postcss.config.js": true,
+        "tailwind.config.ts": false,
+        "README.md": true,
+        "next-env.d.ts": true,
+        ".gitignore": true,
+        "src/utils/supabase": true,
+        "src/utils": true,
+        //"src/app/favicon.ico": true
+    },
+    "hide-files.files": [
+        "postcss.config.js",
+        "tailwind.config.ts",
+        "README.md",
+        "next-env.d.ts",
+        ".gitignore",
+        "src/utils/supabase",
+        "src/utils",
+        "src/app/favicon.ico"
+    ]
+}
