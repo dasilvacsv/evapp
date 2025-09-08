@@ -6,7 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import UpdateStatusForm from '../components/update-status-form';
 import Link from 'next/link';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { ArrowLeft, FileText, User, Building, DollarSign, Calendar, Phone, Mail, FilePenLine } from 'lucide-react';
+import { ArrowLeft, FileText, User, Building, DollarSign, Calendar, Phone, Mail, FilePenLine, CreditCard, Link as LinkIcon, FileCheck } from 'lucide-react';
 
 interface PageProps {
   params: {
@@ -14,7 +14,6 @@ interface PageProps {
   };
 }
 
-// Mapa para traducir estados y truncalizarlos si es necesario
 const translateStatus = (status: string) => {
   const translations: { [key: string]: string } = {
     'new_lead': 'Nuevo Prospecto',
@@ -66,7 +65,6 @@ export default async function PolicyDetailPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6 p-6 md:p-10">
-      {/* Encabezado y Acciones */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
           <Link href="/policies">
@@ -76,7 +74,9 @@ export default async function PolicyDetailPage({ params }: PageProps) {
           </Link>
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Detalles de la Póliza</h2>
-            <p className="text-muted-foreground truncate max-w-xs md:max-w-md">Póliza para <span className="font-semibold">{policy.customerName}</span></p>
+            <p className="text-muted-foreground truncate max-w-xs md:max-w-md">
+              Póliza para <span className="font-semibold">{policy.customerName}</span>
+            </p>
           </div>
         </div>
         <UpdateStatusForm
@@ -84,11 +84,14 @@ export default async function PolicyDetailPage({ params }: PageProps) {
           currentStatus={policy.status}
           currentCompany={policy.insuranceCompany || ''}
           currentPremium={policy.monthlyPremium || ''}
+          currentPolicyNumber={policy.policyNumber || ''}
+          currentEffectiveDate={policy.effectiveDate || ''}
+          currentTaxCredit={policy.taxCredit || ''}
         />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {/* Información de la Póliza */}
+        {/* Información Principal de la Póliza */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center text-lg">
@@ -117,7 +120,17 @@ export default async function PolicyDetailPage({ params }: PageProps) {
 
             <Separator />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {policy.policyNumber && (
+                <div className="flex items-center space-x-3">
+                  <FileCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Número de Póliza</p>
+                    <p className="font-semibold">{policy.policyNumber}</p>
+                  </div>
+                </div>
+              )}
+
               {policy.insuranceCompany && (
                 <div className="flex items-center space-x-3">
                   <Building className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -138,6 +151,26 @@ export default async function PolicyDetailPage({ params }: PageProps) {
                 </div>
               )}
 
+              {policy.taxCredit && (
+                <div className="flex items-center space-x-3">
+                  <CreditCard className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Crédito Fiscal</p>
+                    <p className="font-semibold text-green-600">{formatCurrency(Number(policy.taxCredit))}</p>
+                  </div>
+                </div>
+              )}
+
+              {policy.effectiveDate && (
+                <div className="flex items-center space-x-3">
+                  <Calendar className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Fecha Efectiva</p>
+                    <p className="font-semibold">{formatDate(policy.effectiveDate)}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center space-x-3">
                 <FilePenLine className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                 <div>
@@ -145,15 +178,48 @@ export default async function PolicyDetailPage({ params }: PageProps) {
                   <p className="font-semibold">{formatDate(policy.updatedAt)}</p>
                 </div>
               </div>
-
-              <div className="flex items-center space-x-3">
-                <Calendar className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Fecha de Creación</p>
-                  <p className="font-semibold">{formatDate(policy.createdAt)}</p>
-                </div>
-              </div>
             </div>
+
+            {/* Enlaces adicionales si están disponibles */}
+            {(policy.planLink || policy.aorLink) && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">Enlaces de Documentos</p>
+                  <div className="flex flex-wrap gap-2">
+                    {policy.planLink && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={policy.planLink} target="_blank" rel="noopener noreferrer">
+                          <LinkIcon className="mr-2 h-4 w-4" />
+                          Ver Plan
+                        </a>
+                      </Button>
+                    )}
+                    {policy.aorLink && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={policy.aorLink} target="_blank" rel="noopener noreferrer">
+                          <LinkIcon className="mr-2 h-4 w-4" />
+                          Ver AOR
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Notas si están disponibles */}
+            {policy.notes && (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Notas</p>
+                  <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
+                    {policy.notes}
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

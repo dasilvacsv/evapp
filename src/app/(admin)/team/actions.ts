@@ -3,7 +3,6 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users, customers, policies } from '@/db/schema';
-// 1. Importa la función 'alias'
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { alias } from 'drizzle-orm/pg-core';
@@ -22,7 +21,7 @@ export async function getTeamMembers() {
   const userId = session.user.id;
 
   try {
-    // 2. Crea el alias para la tabla 'users'
+    // Crea el alias para la tabla 'users'
     const manager = alias(users, 'manager');
 
     let whereClause;
@@ -32,7 +31,7 @@ export async function getTeamMembers() {
       whereClause = and(eq(users.isActive, true), sql`${users.role} != 'super_admin'`);
     }
     
-    // 3. Usa el alias en la consulta
+    // Usa el alias en la consulta
     const teamMembers = await db.select({
       id: users.id,
       firstName: users.firstName,
@@ -44,7 +43,7 @@ export async function getTeamMembers() {
       managerName: sql<string>`${manager.firstName} || ' ' || ${manager.lastName}`,
     })
     .from(users)
-    .leftJoin(manager, eq(users.managerId, manager.id)) // Se usa el alias
+    .leftJoin(manager, eq(users.managerId, manager.id))
     .where(whereClause)
     .orderBy(desc(users.createdAt));
 
@@ -103,7 +102,11 @@ export async function getTeamPerformance() {
     if (session.user.role === 'manager') {
       whereClause = eq(users.managerId, userId);
     } else {
-      whereClause = eq(users.role, 'agent');
+      // Para super_admin, incluir todos los agentes activos
+      whereClause = and(
+        eq(users.role, 'agent'),
+        eq(users.isActive, true)
+      );
     }
 
     const performance = await db.select({

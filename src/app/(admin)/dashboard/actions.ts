@@ -3,13 +3,12 @@
 'use server';
 
 import { auth } from '@/lib/auth';
-import { db } from '@/db';
+import { db } from '@/lib/db';
 import { policies, customers, users, commissionRecords } from '@/db/schema';
 import { eq, count, sql, desc, sum, and, inArray } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
 
 // 1. Define el tipo para la consulta de rendimiento del equipo
-type TeamPerformance = {
+export type TeamPerformance = {
   agentId: string;
   agentName: string;
   totalCustomers: number;
@@ -32,7 +31,7 @@ type DashboardStats = {
     createdAt: Date;
   }[];
   userRole: string;
-  teamPerformance: TeamPerformance[]; // Asigna el tipo TeamPerformance[]
+  teamPerformance: TeamPerformance[];
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -50,7 +49,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     let myCustomersCount = 0;
     let myPoliciesCount = 0;
     let recentPolicies = [];
-    let teamPerformance: TeamPerformance[] = []; // 3. Inicializa la variable con el tipo definido
+    let teamPerformance: TeamPerformance[] = [];
 
     // Lógica de filtrado por rol
     if (userRole === 'agent') {
@@ -98,26 +97,23 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       let teamWhereClause;
       if (userRole === 'manager') {
         teamWhereClause = eq(users.managerId, userId);
-      } else {
-        teamWhereClause = undefined; 
       }
 
-      const agentWithStats = alias(users, 'agentWithStats');
-      const teamPerformanceQuery = await db.select({
-        agentId: agentWithStats.id,
-        agentName: sql<string>`${agentWithStats.firstName} || ' ' || ${agentWithStats.lastName}`,
-        totalCustomers: sql<number>`count(${customers.id})`,
-        totalPolicies: sql<number>`count(${policies.id})`,
-        activePolicies: sql<number>`sum(CASE WHEN ${policies.status} = 'active' THEN 1 ELSE 0 END)`,
-      })
-      .from(agentWithStats)
-      .leftJoin(customers, eq(customers.createdByAgentId, agentWithStats.id))
-      .leftJoin(policies, eq(policies.customerId, customers.id))
-      .where(and(eq(agentWithStats.role, 'agent'), teamWhereClause))
-      .groupBy(agentWithStats.id, agentWithStats.firstName, agentWithStats.lastName);
+      const teamPerformanceQuery = await db
+        .select({
+          agentId: users.id,
+          agentName: sql<string>`concat(${users.firstName}, ' ', ${users.lastName})`,
+          totalCustomers: sql<number>`count(distinct ${customers.id})::int`,
+          totalPolicies: sql<number>`count(distinct ${policies.id})::int`,
+          activePolicies: sql<number>`sum(case when ${policies.status} = 'active' then 1 else 0 end)::int`,
+        })
+        .from(users)
+        .leftJoin(customers, eq(customers.createdByAgentId, users.id))
+        .leftJoin(policies, eq(policies.customerId, customers.id))
+        .where(and(eq(users.role, 'agent'), teamWhereClause))
+        .groupBy(users.id, users.firstName, users.lastName);
       
-      // Asigna los datos a la variable tipada
-      teamPerformance = teamPerformanceQuery as TeamPerformance[];
+      teamPerformance = teamPerformanceQuery;
     }
 
     // Estadísticas de comisiones
@@ -133,8 +129,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       totalCustomers: myCustomersCount,
       totalPolicies: myPoliciesCount,
       totalCommissions,
-      policyStatusCounts,
-      recentPolicies,
+      policyStatusCounts: policyStatusCounts.map(item => ({
+        status: item.status || 'unknown',
+        count: item.count
+      })),
+      recentPolicies: recentPolicies.map(policy => ({
+        ...policy,
+        monthlyPremium: policy.monthlyPremium?.toString() || null
+      })),
       userRole,
       teamPerformance,
     };

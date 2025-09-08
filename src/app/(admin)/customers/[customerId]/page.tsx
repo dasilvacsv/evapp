@@ -1,185 +1,154 @@
-import { getCustomerById } from '../actions';
+// (admin)/customers/[customerId]/page.tsx
+
+import { getCustomerDetails } from '../actions';
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
+
+// UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import Link from 'next/link';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+// Icons & Utils
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { ArrowLeft, FileText, User, Phone, Mail, MapPin, Calendar, Briefcase, Landmark, PersonStanding, IdCard, Wallet } from 'lucide-react';
+import { ArrowLeft, User, Users, FileText, FolderOpen, Briefcase, Landmark, Wallet, CreditCard } from 'lucide-react';
 
-interface PageProps {
-  params: {
-    customerId: string;
-  };
-}
-
-// Mapeo de estados a nombres más legibles y colores de Tailwind CSS
-const STATUS_LABELS: Record<string, string> = {
-  new_lead: 'Nuevo Prospecto',
-  contacting: 'Contactando',
-  info_captured: 'Información Capturada',
-  in_review: 'En Revisión',
-  missing_docs: 'Documentos Faltantes',
-  sent_to_carrier: 'Enviado a Compañía',
-  approved: 'Aprobado',
-  rejected: 'Rechazado',
-  active: 'Activo',
-  cancelled: 'Cancelado',
-};
-
-// Mapeo de géneros a nombres más legibles en español
-const GENDER_LABELS: Record<string, string> = {
-  male: 'Masculino',
-  female: 'Femenino',
-  other: 'Otro',
-  prefer_not_to_say: 'Prefiero no decirlo',
-};
-
-// Mapeo de estados migratorios a nombres más legibles en español
+// Mapeos de datos
+const GENDER_LABELS: Record<string, string> = { male: 'Masculino', female: 'Femenino', other: 'Otro' };
+const TAX_TYPE_LABELS: Record<string, string> = { w2: 'W2', '1099': '1099', not_yet_declared: 'No declara aún' };
 const IMMIGRATION_STATUS_LABELS: Record<string, string> = {
-  citizen: 'Ciudadano',
-  green_card: 'Tarjeta Verde',
-  work_permit: 'Permiso de Trabajo',
-  other: 'Otro',
+  citizen: 'Ciudadanía', green_card: 'Residencia', work_permit_ssn: 'Permiso de Trabajo y SSN',
+  u_visa: 'Visa U', political_asylum: 'Asilo Político', parole: 'Parol', notice_of_action: 'Aviso de Acción', other: 'Otro'
 };
 
-const getStatusColor = (status: string) => {
-  const colors: Record<string, string> = {
-    new_lead: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20',
-    contacting: 'bg-yellow-50 text-yellow-700 ring-1 ring-inset ring-yellow-600/20',
-    info_captured: 'bg-purple-50 text-purple-700 ring-1 ring-inset ring-purple-600/20',
-    in_review: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/20',
-    missing_docs: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20',
-    sent_to_carrier: 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20',
-    approved: 'bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20',
-    rejected: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20',
-    active: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20',
-    cancelled: 'bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-600/20',
-  };
-  return colors[status] || 'bg-gray-50 text-gray-700 ring-1 ring-inset ring-gray-600/20';
-};
+const InfoField = ({ Icon, label, value }: { Icon: React.ElementType, label: string, value: string | null | undefined }) => (
+  <div>
+    <p className="text-sm font-medium text-muted-foreground flex items-center"><Icon className="h-4 w-4 mr-2" />{label}</p>
+    <p className="font-semibold text-base leading-snug">{value || 'No especificado'}</p>
+  </div>
+);
 
-export default async function CustomerDetailPage({ params }: PageProps) {
-  const { customer, policies } = await getCustomerById(params.customerId);
+export default async function CustomerDetailPage({ params }: { params: { customerId: string } }) {
+  const customerDetails = await getCustomerDetails(params.customerId);
 
-  const renderInfoField = (Icon: any, label: string, value: string | undefined | null) => (
-    <div className="flex items-start space-x-2">
-      <Icon className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
-      <div className="overflow-hidden">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <p className="font-medium text-base leading-snug truncate">{value || 'No especificado'}</p>
-      </div>
-    </div>
-  );
+  if (!customerDetails) {
+    notFound();
+  }
+
+  const { dependents, policies, documents, ...customer } = customerDetails;
+  const agentName = customer.createdByAgent.name || 
+    `${customer.createdByAgent.firstName} ${customer.createdByAgent.lastName}`;
 
   return (
     <div className="space-y-8 p-4 md:p-8">
-      {/* Encabezado con título y botón de regreso */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-        <div className="flex items-center space-x-4">
-          <Link href="/customers">
-            <Button variant="outline" size="sm" className="hidden md:flex">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Volver a Clientes
-            </Button>
-            <Button variant="ghost" size="icon" className="md:hidden">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">{customer.fullName}</h1>
-            <p className="text-lg text-muted-foreground">Detalles del Cliente</p>
-          </div>
+      {/* Encabezado */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+            <Button asChild variant="outline" size="icon"><Link href="/customers"><ArrowLeft className="h-4 w-4" /></Link></Button>
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight">{customer.fullName}</h1>
+                <p className="text-muted-foreground">Creado por {agentName} el {formatDate(customer.createdAt)}</p>
+            </div>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* Información del Cliente */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <User className="mr-2 h-5 w-5 text-primary" />
-              Información Personal
-            </CardTitle>
-            <CardDescription>Datos básicos y de contacto del cliente.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {renderInfoField(PersonStanding, 'Nombre Completo', customer.fullName)}
-              {renderInfoField(Calendar, 'Fecha de Nacimiento', formatDate(customer.birthDate))}
-              {renderInfoField(IdCard, 'Género', customer.gender ? GENDER_LABELS[customer.gender] : 'No especificado')}
-              {renderInfoField(Mail, 'Email', customer.email)}
-              {renderInfoField(Phone, 'Teléfono', customer.phone)}
-              {renderInfoField(MapPin, 'Dirección', customer.address)}
-            </div>
-
-            <Separator />
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {renderInfoField(Landmark, 'Estado Migratorio', customer.immigrationStatus ? IMMIGRATION_STATUS_LABELS[customer.immigrationStatus] : 'No especificado')}
-              {renderInfoField(Wallet, 'Ingresos Anuales', customer.income ? formatCurrency(Number(customer.income)) : 'No especificado')}
-              {renderInfoField(Briefcase, 'Tipo de Impuestos', customer.taxType)}
-            </div>
-
-            <Separator />
-
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Creado por</p>
-              <p className="font-semibold text-lg truncate">{customer.agentName || 'Agente desconocido'}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Panel de Pólizas */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center">
-                <FileText className="mr-2 h-5 w-5 text-primary" />
-                Pólizas
-              </div>
-              <span className="text-sm text-muted-foreground font-normal">({policies.length})</span>
-            </CardTitle>
-            <CardDescription>Todas las pólizas de seguro de este cliente.</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[500px] overflow-y-auto pr-2">
-            {policies.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground">
-                No se encontraron pólizas para este cliente.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {policies.map((policy) => (
-                  <Link key={policy.id} href={`/policies/${policy.id}`} className="block">
-                    <div className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge className={`text-xs px-2 py-1 ${getStatusColor(policy.status)}`}>
-                          {STATUS_LABELS[policy.status] || policy.status.replace('_', ' ').toUpperCase()}
-                        </Badge>
-                        <p className="text-xs text-muted-foreground">{formatDate(policy.createdAt)}</p>
-                      </div>
-                      <h4 className="font-semibold text-base mb-1 truncate">{policy.insuranceCompany || 'Compañía No Especificada'}</h4>
-                      <div className="space-y-1 text-sm text-muted-foreground">
-                        {policy.monthlyPremium && (
-                          <div className="flex items-center">
-                            <Wallet className="h-3 w-3 mr-1" />
-                            <p>Prima: {formatCurrency(Number(policy.monthlyPremium))}/mes</p>
-                          </div>
-                        )}
-                        {policy.processorName && (
-                          <div className="flex items-center">
-                            <Briefcase className="h-3 w-3 mr-1" />
-                            <p className="truncate">Procesador: {policy.processorName}</p>
-                          </div>
-                        )}
-                      </div>
+        {/* COLUMNA IZQUIERDA Y CENTRAL */}
+        <div className="lg:col-span-2 space-y-8">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center"><User className="mr-2 h-5 w-5 text-primary" />Información del Cliente</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+                <div>
+                    <h3 className="font-semibold mb-2">Datos Personales y de Contacto</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <InfoField Icon={User} label="Nombre Completo" value={customer.fullName} />
+                        <InfoField Icon={CreditCard} label="Género" value={GENDER_LABELS[customer.gender || '']} />
+                        <InfoField Icon={Wallet} label="Fecha de Nacimiento" value={customer.birthDate ? formatDate(customer.birthDate) : undefined} />
+                        <InfoField Icon={CreditCard} label="Email" value={customer.email} />
+                        <InfoField Icon={Wallet} label="Teléfono" value={customer.phone} />
+                        <InfoField Icon={CreditCard} label="Dirección" value={customer.address} />
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+                <Separator />
+                <div>
+                    <h3 className="font-semibold mb-2">Información Migratoria y Financiera</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <InfoField Icon={Landmark} label="Estatus Migratorio" value={IMMIGRATION_STATUS_LABELS[customer.immigrationStatus || '']} />
+                        <InfoField Icon={Briefcase} label="Ingresos Anuales" value={customer.income ? formatCurrency(Number(customer.income)) : undefined} />
+                        <InfoField Icon={Wallet} label="Tipo de Impuestos" value={TAX_TYPE_LABELS[customer.taxType || '']} />
+                        <InfoField Icon={CreditCard} label="SSN" value={customer.ssn ? '***-**-' + customer.ssn.slice(-4) : 'No disponible'} />
+                    </div>
+                </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5 text-primary" />Pólizas Registradas</CardTitle></CardHeader>
+            <CardContent>
+                <Table>
+                    <TableHeader><TableRow><TableHead>Aseguradora</TableHead><TableHead>Estado</TableHead><TableHead>Prima Mensual</TableHead><TableHead>Fecha Efectiva</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                        {policies.length > 0 ? policies.map(p => (
+                            <TableRow key={p.id}>
+                                <TableCell className="font-medium">{p.insuranceCompany}</TableCell>
+                                <TableCell><Badge>{p.status}</Badge></TableCell>
+                                <TableCell>{p.monthlyPremium ? formatCurrency(Number(p.monthlyPremium)) : '-'}</TableCell>
+                                <TableCell>{p.effectiveDate ? formatDate(p.effectiveDate) : '-'}</TableCell>
+                            </TableRow>
+                        )) : <TableRow><TableCell colSpan={4} className="text-center">No hay pólizas.</TableCell></TableRow>}
+                    </TableBody>
+                </Table>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* COLUMNA DERECHA */}
+        <div className="space-y-8">
+            {/* Métodos de Pago */}
+            <Card>
+                <CardHeader><CardTitle className="flex items-center"><Wallet className="mr-2 h-5 w-5 text-primary" />Métodos de Pago</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                    {policies.some(p => p.paymentMethod) ? policies.map(p => 
+                        p.paymentMethod && (
+                            <div key={p.paymentMethod.id} className="p-3 bg-muted/50 rounded-md">
+                                <p className="font-semibold">{p.paymentMethod.cardBrand || p.paymentMethod.bankName || p.paymentMethod.methodType.replace('_', ' ')}</p>
+                                <p className="text-sm text-muted-foreground">Terminada en •••• {p.paymentMethod.cardLast4 || p.paymentMethod.accountLast4}</p>
+                            </div>
+                        )
+                    ) : <p className="text-sm text-muted-foreground">No hay métodos de pago registrados.</p>}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader><CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary" />Dependientes</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                    {dependents.length > 0 ? dependents.map(d => (
+                        <div key={d.id} className="text-sm p-2 bg-muted/50 rounded-md">
+                            <p className="font-semibold">{d.fullName}</p>
+                            <p className="text-muted-foreground">{d.relationship} - {d.birthDate ? `Nacimiento: ${formatDate(d.birthDate)}` : 'Sin fecha'}</p>
+                        </div>
+                    )) : <p className="text-sm text-muted-foreground">No hay dependientes registrados.</p>}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader><CardTitle className="flex items-center"><FolderOpen className="mr-2 h-5 w-5 text-primary" />Documentos Adjuntos</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                    {documents.length > 0 ? documents.map(doc => {
+                        const uploaderName = doc.uploadedByUser.name || 
+                          `${doc.uploadedByUser.firstName} ${doc.uploadedByUser.lastName}`;
+                        return (
+                            <div key={doc.id} className="text-sm p-2 bg-muted/50 rounded-md">
+                                <p className="font-semibold text-primary truncate">{doc.fileName}</p>
+                                <p className="text-xs text-muted-foreground">Subido por {uploaderName}</p>
+                            </div>
+                        );
+                    }) : <p className="text-sm text-muted-foreground">No hay documentos adjuntos.</p>}
+                </CardContent>
+            </Card>
+        </div>
       </div>
     </div>
   );

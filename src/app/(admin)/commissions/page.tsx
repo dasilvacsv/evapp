@@ -1,5 +1,3 @@
-// src/app/commissions/page.tsx
-
 'use client'; 
 
 import { useState, useEffect } from 'react';
@@ -13,8 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { Calculator, DollarSign, Clock, CheckCircle, ArrowRight, Wallet, TrendingUp } from 'lucide-react';
-// Asegúrate de que este componente acepte `policies` y `selectedPolicies`
-import CommissionCalculator from './components/commission-calculator'; 
+import CommissionCalculator from './components/commission-calculator';
 
 interface Policy {
   id: string;
@@ -22,6 +19,9 @@ interface Policy {
   agentName: string;
   insuranceCompany: string;
   monthlyPremium: number;
+  policyNumber?: string;
+  taxCredit?: number;
+  effectiveDate?: string;
 }
 
 interface Batch {
@@ -186,7 +186,6 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                 Selecciona las pólizas que deseas incluir en un nuevo lote de comisiones.
               </p>
             </div>
-            {/* Aquí pasamos la lista de pólizas y las seleccionadas */}
             <CommissionCalculator policies={policies} selectedPolicies={selectedPolicies} />
           </div>
 
@@ -206,22 +205,43 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px]"><Checkbox checked={allSelected} onCheckedChange={(checked) => handleSelectAll(checked as boolean)} /></TableHead>
+                      <TableHead className="w-[50px]">
+                        <Checkbox 
+                          checked={allSelected} 
+                          onCheckedChange={(checked) => handleSelectAll(checked as boolean)} 
+                        />
+                      </TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Agente</TableHead>
                       <TableHead>Compañía</TableHead>
+                      <TableHead>N° Póliza</TableHead>
                       <TableHead className="text-right">Prima Mensual</TableHead>
+                      <TableHead className="text-right">Crédito Fiscal</TableHead>
                       <TableHead className="text-right">Comisión Estimada</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {policies.map((policy) => (
-                      <TableRow key={policy.id} className={isPolicySelected(policy.id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}>
-                        <TableCell><Checkbox checked={isPolicySelected(policy.id)} onCheckedChange={(checked) => handleSelectPolicy(policy, checked as boolean)} /></TableCell>
+                      <TableRow 
+                        key={policy.id} 
+                        className={isPolicySelected(policy.id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}
+                      >
+                        <TableCell>
+                          <Checkbox 
+                            checked={isPolicySelected(policy.id)} 
+                            onCheckedChange={(checked) => handleSelectPolicy(policy, checked as boolean)} 
+                          />
+                        </TableCell>
                         <TableCell className="font-medium text-gray-900">{policy.customerName}</TableCell>
                         <TableCell>{policy.agentName}</TableCell>
                         <TableCell>{policy.insuranceCompany}</TableCell>
-                        <TableCell className="text-right font-semibold text-gray-700">{formatCurrency(Number(policy.monthlyPremium))}</TableCell>
+                        <TableCell className="text-sm text-gray-600">{policy.policyNumber || 'N/A'}</TableCell>
+                        <TableCell className="text-right font-semibold text-gray-700">
+                          {formatCurrency(Number(policy.monthlyPremium))}
+                        </TableCell>
+                        <TableCell className="text-right text-blue-600 font-semibold">
+                          {policy.taxCredit ? formatCurrency(Number(policy.taxCredit)) : 'N/A'}
+                        </TableCell>
                         <TableCell className="text-right font-bold text-green-600">
                           {formatCurrency(Number(policy.monthlyPremium) * 0.1)}
                         </TableCell>

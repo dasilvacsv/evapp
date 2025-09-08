@@ -165,7 +165,7 @@ export function AddUserDialog() {
               </div>
             </div>
 
-            {/* Campo de Rol */}
+            {/* Campo de Rol - actualizado con los roles del schema */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="role" className="text-right">Rol</Label>
               <div className="col-span-3">

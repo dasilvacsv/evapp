@@ -14,7 +14,6 @@ import { Loader2, Edit, CheckCircle, XCircle } from 'lucide-react';
 import { updatePolicyStatus } from '../actions';
 import { toast } from 'sonner';
 
-// Define el esquema de validación para el formulario
 const formSchema = z.object({
   status: z.enum([
     'new_lead',
@@ -30,6 +29,9 @@ const formSchema = z.object({
   ]),
   insuranceCompany: z.string().optional(),
   monthlyPremium: z.string().optional(),
+  policyNumber: z.string().optional(),
+  effectiveDate: z.string().optional(),
+  taxCredit: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -39,6 +41,9 @@ interface UpdateStatusFormProps {
   currentStatus: string;
   currentCompany?: string;
   currentPremium?: string;
+  currentPolicyNumber?: string;
+  currentEffectiveDate?: string;
+  currentTaxCredit?: string;
 }
 
 export default function UpdateStatusForm({
@@ -46,6 +51,9 @@ export default function UpdateStatusForm({
   currentStatus,
   currentCompany,
   currentPremium,
+  currentPolicyNumber,
+  currentEffectiveDate,
+  currentTaxCredit,
 }: UpdateStatusFormProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -56,21 +64,26 @@ export default function UpdateStatusForm({
       status: currentStatus as any,
       insuranceCompany: currentCompany || '',
       monthlyPremium: currentPremium || '',
+      policyNumber: currentPolicyNumber || '',
+      effectiveDate: currentEffectiveDate || '',
+      taxCredit: currentTaxCredit || '',
     },
   });
 
   const { isDirty, formState: { errors } } = form;
 
-  // Actualiza el estado inicial del formulario cuando se abre el diálogo
   useEffect(() => {
     if (open) {
       form.reset({
         status: currentStatus as any,
         insuranceCompany: currentCompany || '',
         monthlyPremium: currentPremium || '',
+        policyNumber: currentPolicyNumber || '',
+        effectiveDate: currentEffectiveDate || '',
+        taxCredit: currentTaxCredit || '',
       });
     }
-  }, [open, currentStatus, currentCompany, currentPremium, form]);
+  }, [open, currentStatus, currentCompany, currentPremium, currentPolicyNumber, currentEffectiveDate, currentTaxCredit, form]);
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -110,12 +123,12 @@ export default function UpdateStatusForm({
       <DialogTrigger asChild>
         <Button variant="default" size="sm">
           <Edit className="mr-2 h-4 w-4" />
-          Actualizar Estado
+          Actualizar
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Actualizar Estado de la Póliza</DialogTitle>
+          <DialogTitle>Actualizar Póliza</DialogTitle>
           <DialogDescription>
             Actualiza el estado y los detalles de esta póliza.
           </DialogDescription>
@@ -149,32 +162,59 @@ export default function UpdateStatusForm({
             )}
           </div>
 
-          {/* Campos condicionales para "Aprobado" y "Activo" */}
-          {showExtraFields && (
-            <>
-              <div className="grid gap-2">
-                <Label htmlFor="insuranceCompany">Compañía de Seguros</Label>
-                <Input
-                  id="insuranceCompany"
-                  {...form.register('insuranceCompany')}
-                  placeholder="ej. State Farm, Allstate"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="monthlyPremium">Prima Mensual</Label>
-                <Input
-                  id="monthlyPremium"
-                  {...form.register('monthlyPremium')}
-                  placeholder="150.00"
-                  type="number"
-                  step="0.01"
-                />
-                {errors.monthlyPremium && (
-                  <p className="text-sm text-red-600">{errors.monthlyPremium.message}</p>
-                )}
-              </div>
-            </>
-          )}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="insuranceCompany">Compañía de Seguros</Label>
+              <Input
+                id="insuranceCompany"
+                {...form.register('insuranceCompany')}
+                placeholder="ej. State Farm, Allstate"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="monthlyPremium">Prima Mensual</Label>
+              <Input
+                id="monthlyPremium"
+                {...form.register('monthlyPremium')}
+                placeholder="150.00"
+                type="number"
+                step="0.01"
+              />
+              {errors.monthlyPremium && (
+                <p className="text-sm text-red-600">{errors.monthlyPremium.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="policyNumber">Número de Póliza</Label>
+              <Input
+                id="policyNumber"
+                {...form.register('policyNumber')}
+                placeholder="ej. POL-2024-001"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="effectiveDate">Fecha Efectiva</Label>
+              <Input
+                id="effectiveDate"
+                {...form.register('effectiveDate')}
+                type="date"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="taxCredit">Crédito Fiscal</Label>
+            <Input
+              id="taxCredit"
+              {...form.register('taxCredit')}
+              placeholder="0.00"
+              type="number"
+              step="0.01"
+            />
+          </div>
 
           <DialogFooter className="mt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>

@@ -3,14 +3,13 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users, processorManagerAssignments } from '@/db/schema';
-// 1. Importa la función 'alias'
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { alias } from 'drizzle-orm/pg-core';
 
-// Schemas de Zod (sin cambios)
+// Schemas de Zod actualizados con los roles del schema
 const createUserSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
@@ -46,20 +45,19 @@ export async function getAllUsers(page = 1, limit = 10, search = '', role = '') 
   try {
     const offset = (page - 1) * limit;
     
-    // 2. Crea el alias para la tabla 'users'
+    // Crea el alias para la tabla 'users'
     const manager = alias(users, 'manager');
 
-    // 3. REESTRUCTURACIÓN DE LA CONSULTA
-    // Primero, creamos un array de condiciones de filtro
+    // Construir las condiciones de filtro
     const conditions = [];
     if (search) {
       conditions.push(sql`(${users.firstName} || ' ' || ${users.lastName} || ' ' || ${users.email}) ILIKE ${`%${search}%`}`);
     }
-    if (role && role !== 'all') { // <-- CAMBIO
-  conditions.push(eq(users.role, role as any));
-}
+    if (role && role !== 'all') {
+      conditions.push(eq(users.role, role as any));
+    }
 
-    // Construimos la consulta principal
+    // Consulta principal
     const usersList = await db.select({
       id: users.id,
       email: users.email,
@@ -72,16 +70,16 @@ export async function getAllUsers(page = 1, limit = 10, search = '', role = '') 
       managerName: sql<string>`${manager.firstName} || ' ' || ${manager.lastName}`,
     })
     .from(users)
-    .leftJoin(manager, eq(users.managerId, manager.id)) // Se usa el alias
-    .where(and(...conditions)) // Se aplican todas las condiciones juntas
+    .leftJoin(manager, eq(users.managerId, manager.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(users.createdAt))
     .limit(limit)
     .offset(offset);
 
-    // Construimos la consulta para el conteo total
+    // Consulta para el conteo total
     const totalResult = await db.select({ count: count() })
       .from(users)
-      .where(and(...conditions)); // Se usan las mismas condiciones
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
       
     const total = totalResult[0]?.count || 0;
 
@@ -135,7 +133,7 @@ export async function createUser(data: z.infer<typeof createUserSchema>) {
       isActive: true,
     });
 
-    revalidatePath('/settings'); // CORRECCIÓN ADICIONAL
+    revalidatePath('/settings');
     return { success: true, message: 'User created successfully' };
   } catch (error) {
     console.error('Create user error:', error);
@@ -157,8 +155,7 @@ export async function updateUserRole(prevState: any, formData: FormData) {
   const dataToValidate = {
     userId: formData.get('userId'),
     role: formData.get('role'),
-    managerId: formData.get('managerId') || undefined, // opcional
-    // El Switch de shadcn envía "on" o no envía nada.
+    managerId: formData.get('managerId') || undefined,
     isActive: formData.get('isActive') === 'on', 
   };
   
@@ -178,7 +175,6 @@ export async function updateUserRole(prevState: any, formData: FormData) {
     return { success: true, message: 'User updated successfully' };
   } catch (error) {
     if (error instanceof z.ZodError) {
-      // Devolvemos un mensaje de error de validación más genérico
       return { success: false, message: 'Validation error. Please check the fields.' };
     }
     console.error('Update user role error:', error);
@@ -264,7 +260,7 @@ export async function assignProcessorToManagers(data: z.infer<typeof assignProce
       await db.insert(processorManagerAssignments).values(assignments);
     }
 
-    revalidatePath('/settings'); // CORRECCIÓN ADICIONAL
+    revalidatePath('/settings');
     return { success: true, message: 'Processor assignments updated successfully' };
   } catch (error) {
     console.error('Assign processor error:', error);
@@ -287,7 +283,7 @@ export async function getProcessorAssignments() {
   }
 
   try {
-    // CORRECCIÓN: Se crean los alias para 'processor' y 'manager'
+    // Crear los alias para 'processor' y 'manager'
     const processor = alias(users, 'processor');
     const manager = alias(users, 'manager');
 

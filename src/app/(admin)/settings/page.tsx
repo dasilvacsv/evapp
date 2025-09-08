@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx
+// src/app/(admin)/settings/page.tsx
 'use client';
 
 import { getAllUsers } from './actions';

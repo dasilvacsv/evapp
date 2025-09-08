@@ -3,7 +3,6 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { policies, customers, users, commissionRecords, commissionBatches } from '@/db/schema';
-// 1. Importa 'alias'
 import { eq, and, desc, sql, count, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -28,11 +27,8 @@ export async function getCommissionablePolicies(page = 1, limit = 10, search = '
   try {
     const offset = (page - 1) * limit;
     
-    // 2. Crea el alias para la tabla 'users'
     const agent = alias(users, 'agent');
     
-    // 3. REESTRUCTURACIÓN DE LA CONSULTA (para arreglar el error de '.where')
-    // Primero, creamos las condiciones del filtro
     const conditions = [
       eq(policies.status, 'active'),
       isNull(commissionRecords.id),
@@ -41,12 +37,14 @@ export async function getCommissionablePolicies(page = 1, limit = 10, search = '
       conditions.push(sql`${customers.fullName} ILIKE ${`%${search}%`}`);
     }
 
-    // Construimos la consulta principal
     const policiesList = await db.select({
       id: policies.id,
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
+      policyNumber: policies.policyNumber,
+      taxCredit: policies.taxCredit,
+      effectiveDate: policies.effectiveDate,
       commissionStatus: policies.commissionStatus,
       createdAt: policies.createdAt,
       customerName: customers.fullName,
@@ -57,14 +55,13 @@ export async function getCommissionablePolicies(page = 1, limit = 10, search = '
     })
     .from(policies)
     .innerJoin(customers, eq(policies.customerId, customers.id))
-    .leftJoin(agent, eq(customers.createdByAgentId, agent.id)) // Se usa el alias
+    .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
     .leftJoin(commissionRecords, eq(commissionRecords.policyId, policies.id))
-    .where(and(...conditions)) // Se aplican todas las condiciones juntas
+    .where(and(...conditions))
     .orderBy(desc(policies.createdAt))
     .limit(limit)
     .offset(offset);
 
-    // Construimos la consulta para el conteo total
     const totalResult = await db.select({ count: count() })
       .from(policies)
       .innerJoin(customers, eq(policies.customerId, customers.id))
@@ -88,11 +85,65 @@ export async function getCommissionablePolicies(page = 1, limit = 10, search = '
   }
 }
 
-// ... (createCommissionBatch no cambia, ya era correcto)
 export async function createCommissionBatch(data: z.infer<typeof createCommissionBatchSchema>) {
-    //...
-}
+  const session = await auth();
 
+  if (!session?.user) {
+    throw new Error('Unauthorized');
+  }
+
+  if (!['commission_analyst', 'super_admin'].includes(session.user.role)) {
+    throw new Error('Insufficient permissions');
+  }
+
+  try {
+    const validatedData = createCommissionBatchSchema.parse(data);
+
+    // Create the batch
+    const [batchResult] = await db.insert(commissionBatches).values({
+      periodDescription: validatedData.periodDescription,
+      createdByAnalystId: session.user.id,
+      status: 'pending_approval',
+    }).returning({ id: commissionBatches.id });
+
+    // Get policy and agent information for commission calculation
+    const agent = alias(users, 'agent');
+    const policyData = await db.select({
+      policyId: policies.id,
+      agentId: customers.createdByAgentId,
+      monthlyPremium: policies.monthlyPremium,
+    })
+    .from(policies)
+    .innerJoin(customers, eq(policies.customerId, customers.id))
+    .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
+    .where(sql`${policies.id} IN ${validatedData.policyIds}`);
+
+    // Create commission records
+    const commissionRecordsData = policyData.map(policy => ({
+      policyId: policy.policyId,
+      agentId: policy.agentId,
+      commissionAmount: String(Number(policy.monthlyPremium) * 0.1), // 10% commission rate
+      processedByAnalystId: session.user.id,
+      paymentBatchId: batchResult.id,
+    }));
+
+    await db.insert(commissionRecords).values(commissionRecordsData);
+
+    // Update policy commission status
+    await db.update(policies)
+      .set({ commissionStatus: 'calculated' })
+      .where(sql`${policies.id} IN ${validatedData.policyIds}`);
+
+    revalidatePath('/commissions');
+    return { success: true, message: 'Commission batch created successfully' };
+  } catch (error) {
+    console.error('Create commission batch error:', error);
+    if (error instanceof z.ZodError) {
+      return { success: false, message: 'Validation error', errors: error.errors };
+    }
+    throw new Error('Failed to create commission batch');
+  }
+}
 
 export async function getCommissionBatches(page = 1, limit = 10) {
   const session = await auth();
@@ -108,7 +159,6 @@ export async function getCommissionBatches(page = 1, limit = 10) {
   try {
     const offset = (page - 1) * limit;
     
-    // CORRECCIÓN: Se crean los alias para 'creator' y 'approver'
     const creator = alias(users, 'creator');
     const approver = alias(users, 'approver');
 
@@ -177,7 +227,7 @@ export async function approveCommissionBatch(batchId: string) {
       })
       .where(eq(commissionBatches.id, batchId));
 
-    revalidatePath('/admin/commissions');
+    revalidatePath('/commissions');
     return { success: true, message: 'Commission batch approved successfully' };
   } catch (error) {
     console.error('Approve commission batch error:', error);

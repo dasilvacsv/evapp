@@ -14,7 +14,6 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-// Mapeo de estados de póliza a un formato legible y un color más coherente
 const STATUS_MAP = {
   new_lead: { label: 'Nuevo Contacto', color: 'bg-blue-100 text-blue-800 hover:bg-blue-200' },
   contacting: { label: 'En Contacto', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
@@ -28,7 +27,6 @@ const STATUS_MAP = {
   cancelled: { label: 'Cancelada', color: 'bg-gray-100 text-gray-800 hover:bg-gray-200' },
 };
 
-// Mapeo de estados de comisión
 const COMMISSION_STATUS_MAP = {
   pending: { label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
   calculated: { label: 'Calculada', color: 'bg-blue-100 text-blue-800 hover:bg-blue-200' },
@@ -114,10 +112,11 @@ export default function PoliciesPage() {
                     <TableHead>Cliente</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Comisión</TableHead>
+                    <TableHead className="hidden md:table-cell">N° Póliza</TableHead>
                     <TableHead className="hidden md:table-cell">Aseguradora</TableHead>
                     <TableHead className="hidden md:table-cell">Prima Mensual</TableHead>
+                    <TableHead className="hidden lg:table-cell">Fecha Efectiva</TableHead>
                     <TableHead className="hidden lg:table-cell">Agente</TableHead>
-                    <TableHead className="hidden lg:table-cell">Procesador</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -135,10 +134,17 @@ export default function PoliciesPage() {
                           {getCommissionStatusInfo(policy.commissionStatus).label}
                         </Badge>
                       </TableCell>
+                      <TableCell className="hidden md:table-cell text-sm text-gray-600">
+                        {policy.policyNumber || 'N/A'}
+                      </TableCell>
                       <TableCell className="hidden md:table-cell">{policy.insuranceCompany || 'N/A'}</TableCell>
-                      <TableCell className="hidden md:table-cell">{policy.monthlyPremium ? formatCurrency(Number(policy.monthlyPremium)) : 'N/A'}</TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {policy.monthlyPremium ? formatCurrency(Number(policy.monthlyPremium)) : 'N/A'}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">
+                        {policy.effectiveDate ? formatDate(policy.effectiveDate) : 'N/A'}
+                      </TableCell>
                       <TableCell className="hidden lg:table-cell">{policy.agentName || 'N/A'}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{policy.processorName || 'N/A'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">
                           <UpdateStatusForm
@@ -146,6 +152,9 @@ export default function PoliciesPage() {
                             currentStatus={policy.status}
                             currentCompany={policy.insuranceCompany || ''}
                             currentPremium={policy.monthlyPremium || ''}
+                            currentPolicyNumber={policy.policyNumber || ''}
+                            currentEffectiveDate={policy.effectiveDate || ''}
+                            currentTaxCredit={policy.taxCredit || ''}
                           />
                           <Link href={`/policies/${policy.id}`}>
                             <Button variant="ghost" size="sm">

@@ -1,5 +1,3 @@
-// src/app/commissions/components/commission-calculator.tsx
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -9,14 +7,13 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createCommissionBatch } from '../actions';
 import { formatCurrency } from '@/lib/utils';
-import { Calculator, Plus, Search, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Calculator, Plus, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 const formSchema = z.object({
   periodDescription: z.string().min(1, 'La descripción del período es obligatoria.'),
@@ -31,6 +28,8 @@ interface Policy {
   agentName: string;
   insuranceCompany: string;
   monthlyPremium: number;
+  policyNumber?: string;
+  taxCredit?: number;
 }
 
 interface CommissionCalculatorProps {
@@ -43,7 +42,6 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -54,14 +52,24 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
   });
 
   const selectedPoliciesIds = selectedPolicies.map(p => p.id);
-  
-  // No necesitamos handlePolicySelection ni useMemo para la selección aquí,
-  // porque el componente padre (page.tsx) gestiona la selección.
-  // El botón de "Crear Lote" en el modal solo usa las políticas seleccionadas.
 
   const calculateTotalCommission = useMemo(() => {
     const total = selectedPolicies.reduce((sum, policy) => {
-      return sum + (Number(policy.monthlyPremium) * 0.1); // Tasa de comisión del 10%
+      return sum + (Number(policy.monthlyPremium) * 0.1);
+    }, 0);
+    return formatCurrency(total);
+  }, [selectedPolicies]);
+
+  const calculateTotalPremiums = useMemo(() => {
+    const total = selectedPolicies.reduce((sum, policy) => {
+      return sum + Number(policy.monthlyPremium);
+    }, 0);
+    return formatCurrency(total);
+  }, [selectedPolicies]);
+
+  const calculateTotalTaxCredits = useMemo(() => {
+    const total = selectedPolicies.reduce((sum, policy) => {
+      return sum + (Number(policy.taxCredit) || 0);
     }, 0);
     return formatCurrency(total);
   }, [selectedPolicies]);
@@ -72,7 +80,6 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
     setSuccess(false);
 
     try {
-      // Usamos los IDs de las pólizas seleccionadas, que ya están en el componente padre
       const result = await createCommissionBatch({
         ...data,
         policyIds: selectedPoliciesIds,
@@ -84,7 +91,7 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
         setTimeout(() => {
           setOpen(false);
           setSuccess(false);
-          window.location.reload(); // Recarga la página para ver los cambios
+          window.location.reload();
         }, 2000);
       } else {
         setError(result.message);
@@ -116,7 +123,6 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex-grow flex flex-col p-6 space-y-6 overflow-y-auto" id="commission-batch-form">
-          {/* Sección: Información del Lote */}
           <div className="space-y-4">
             <Label htmlFor="periodDescription" className="text-sm font-medium text-gray-700">Descripción del Período *</Label>
             <Input
@@ -130,18 +136,25 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
 
           <hr className="border-t" />
 
-          {/* Sección: Resumen y Alertas */}
           <div className="space-y-4">
             <Card className="bg-green-50/50 border-green-200 shadow-sm">
               <CardContent className="p-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
-                    <p className="text-sm text-green-700 font-medium">Pólizas Seleccionadas</p>
-                    <p className="text-3xl font-bold text-green-900">{selectedPolicies.length}</p>
+                    <p className="text-sm text-green-700 font-medium">Pólizas</p>
+                    <p className="text-2xl font-bold text-green-900">{selectedPolicies.length}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-green-700 font-medium">Total a Pagar</p>
-                    <p className="text-3xl font-bold text-green-900">{calculateTotalCommission}</p>
+                    <p className="text-sm text-green-700 font-medium">Total Primas</p>
+                    <p className="text-2xl font-bold text-green-900">{calculateTotalPremiums}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-green-700 font-medium">Créditos Fiscales</p>
+                    <p className="text-2xl font-bold text-green-900">{calculateTotalTaxCredits}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-green-700 font-medium">Total Comisiones</p>
+                    <p className="text-2xl font-bold text-green-900">{calculateTotalCommission}</p>
                   </div>
                 </div>
               </CardContent>
@@ -162,6 +175,35 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
                 <AlertDescription>Lote de comisiones creado con éxito.</AlertDescription>
               </Alert>
             )}
+          </div>
+
+          {/* Preview of selected policies */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-gray-700">Pólizas Incluidas</Label>
+            <div className="max-h-60 overflow-y-auto border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Cliente</TableHead>
+                    <TableHead className="text-xs">N° Póliza</TableHead>
+                    <TableHead className="text-xs text-right">Prima</TableHead>
+                    <TableHead className="text-xs text-right">Comisión</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedPolicies.map((policy) => (
+                    <TableRow key={policy.id} className="text-sm">
+                      <TableCell>{policy.customerName}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{policy.policyNumber || 'N/A'}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(Number(policy.monthlyPremium))}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        {formatCurrency(Number(policy.monthlyPremium) * 0.1)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         </form>
         

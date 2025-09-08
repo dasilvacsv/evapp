@@ -1,4 +1,4 @@
-// actions.ts
+// app/(admin)/processing/actions.ts
 
 'use server';
 
@@ -66,19 +66,31 @@ export async function getProcessingQueue(page = 1, limit = 10, status = '') {
       }
     }
 
-    // Consulta principal
+    // Consulta principal con campos actualizados del schema
     const processingQuery = db.select({
       id: policies.id,
+      customerId: policies.customerId,
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
+      policyNumber: policies.policyNumber,
+      effectiveDate: policies.effectiveDate,
+      planLink: policies.planLink,
+      taxCredit: policies.taxCredit,
+      aorLink: policies.aorLink,
+      notes: policies.notes,
       commissionStatus: policies.commissionStatus,
       createdAt: policies.createdAt,
       updatedAt: policies.updatedAt,
       customerName: customers.fullName,
       customerEmail: customers.email,
       customerPhone: customers.phone,
-      customerId: customers.id,
+      customerGender: customers.gender,
+      customerBirthDate: customers.birthDate,
+      customerAddress: customers.address,
+      customerCounty: customers.county,
+      customerState: customers.state,
+      customerImmigrationStatus: customers.immigrationStatus,
       agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
       processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
     })
@@ -91,13 +103,18 @@ export async function getProcessingQueue(page = 1, limit = 10, status = '') {
     .offset(offset);
 
     // Aplica la cláusula WHERE si no es 'super_admin'
-    if (whereClause) {
+    if (whereClause && userRole !== 'super_admin') {
       processingQuery.where(whereClause);
     }
 
     // Aplica el filtro de estado si está presente
     if (status) {
-      processingQuery.where(eq(policies.status, status as any));
+      const statusFilter = eq(policies.status, status as any);
+      if (whereClause && userRole !== 'super_admin') {
+        processingQuery.where(and(whereClause, statusFilter));
+      } else {
+        processingQuery.where(statusFilter);
+      }
     }
 
     const processingList = await processingQuery;
@@ -106,11 +123,16 @@ export async function getProcessingQueue(page = 1, limit = 10, status = '') {
     const totalQuery = db.select({ count: count() }).from(policies)
       .innerJoin(customers, eq(policies.customerId, customers.id));
     
-    if (whereClause) {
-      totalQuery.where(whereClause);
+    let totalConditions = [];
+    if (whereClause && userRole !== 'super_admin') {
+      totalConditions.push(whereClause);
     }
     if (status) {
-      totalQuery.where(eq(policies.status, status as any));
+      totalConditions.push(eq(policies.status, status as any));
+    }
+    
+    if (totalConditions.length > 0) {
+      totalQuery.where(and(...totalConditions));
     }
     
     const totalResult = await totalQuery;
@@ -174,6 +196,7 @@ export async function requestMissingDocs(policyId: string, notes: string) {
     await db.update(policies)
       .set({ 
         status: 'missing_docs',
+        notes: notes, // Usar el nuevo campo notes del schema
         updatedAt: new Date(),
       })
       .where(eq(policies.id, policyId));
@@ -184,6 +207,40 @@ export async function requestMissingDocs(policyId: string, notes: string) {
   } catch (error) {
     console.error('Request missing docs error:', error);
     throw new Error('Failed to request missing documents');
+  }
+}
+
+export async function updatePolicyStatus(policyId: string, status: string, notes?: string) {
+  const session = await auth();
+
+  if (!session?.user) {
+    throw new Error('Unauthorized');
+  }
+
+  if (!['processor', 'super_admin', 'manager'].includes(session.user.role)) {
+    throw new Error('Insufficient permissions');
+  }
+
+  try {
+    const updateData: any = {
+      status: status as any,
+      updatedAt: new Date(),
+    };
+
+    if (notes) {
+      updateData.notes = notes;
+    }
+
+    await db.update(policies)
+      .set(updateData)
+      .where(eq(policies.id, policyId));
+
+    revalidatePath('/processing');
+    revalidatePath('/policies');
+    return { success: true, message: 'Policy status updated successfully' };
+  } catch (error) {
+    console.error('Update policy status error:', error);
+    throw new Error('Failed to update policy status');
   }
 }
 
@@ -205,7 +262,23 @@ export async function getProcessingStats() {
     let whereClause;
 
     if (userRole === 'processor' || userRole === 'manager') {
-      whereClause = eq(policies.assignedProcessorId, userId);
+      // Para procesadores y managers, solo mostrar sus asignaciones
+      if (userRole === 'processor') {
+        whereClause = eq(policies.assignedProcessorId, userId);
+      } else {
+        // Para managers, mostrar las pólizas de sus agentes
+        const managedAgents = await db.select({ id: users.id })
+          .from(users)
+          .where(eq(users.managerId, userId));
+        
+        const managedAgentIds = managedAgents.map(agent => agent.id);
+        
+        if (managedAgentIds.length > 0) {
+          whereClause = inArray(customers.createdByAgentId, managedAgentIds);
+        } else {
+          whereClause = sql`1=0`; // No policies if no managed agents
+        }
+      }
     }
 
     const statusCounts = await db.select({
@@ -213,15 +286,18 @@ export async function getProcessingStats() {
       count: count(),
     })
     .from(policies)
-    .where(whereClause)
+    .innerJoin(customers, eq(policies.customerId, customers.id))
+    .where(whereClause || sql`1=1`)
     .groupBy(policies.status);
 
     const totalAssigned = await db.select({ count: count() })
       .from(policies)
+      .innerJoin(customers, eq(policies.customerId, customers.id))
       .where(whereClause || sql`1=1`);
 
     const needingAttention = await db.select({ count: count() })
       .from(policies)
+      .innerJoin(customers, eq(policies.customerId, customers.id))
       .where(and(
         whereClause || sql`1=1`,
         or(

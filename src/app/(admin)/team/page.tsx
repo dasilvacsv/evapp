@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { formatDate } from '@/lib/utils';
-import { Users, TrendingUp, UserCheck, Crown, FileText } from 'lucide-react';
+import { Users, UserCheck, Crown, FileText, Shield } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 
 export default async function TeamPage() {
@@ -14,7 +14,7 @@ export default async function TeamPage() {
     getTeamPerformance(),
   ]);
 
-  // Objeto de mapeo para traducir los roles a español
+  // Objeto de mapeo para traducir los roles a español (actualizado con el schema)
   const roleTranslations: Record<string, string> = {
     'super_admin': 'Súper Administrador',
     'manager': 'Gerente',
@@ -41,9 +41,15 @@ export default async function TeamPage() {
       case 'super_admin':
         return Crown;
       case 'manager':
-        return Users;
+        return Shield;
       case 'agent':
         return UserCheck;
+      case 'processor':
+        return FileText;
+      case 'commission_analyst':
+        return FileText;
+      case 'customer_service':
+        return Users;
       default:
         return FileText;
     }

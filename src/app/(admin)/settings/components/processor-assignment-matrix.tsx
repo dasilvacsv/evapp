@@ -9,9 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { assignProcessorToManagers, getManagers, getProcessors, getProcessorAssignments } from '../actions';
-import { Network, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Network, Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Esquema de validación con Zod

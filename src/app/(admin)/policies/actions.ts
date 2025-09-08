@@ -3,7 +3,6 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { policies, customers, users } from '@/db/schema';
-// 1. Importa la función 'alias' desde drizzle
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -13,6 +12,9 @@ const createPolicySchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   insuranceCompany: z.string().min(1, 'Insurance company is required'),
   monthlyPremium: z.string().min(1, 'Monthly premium is required'),
+  policyNumber: z.string().optional(),
+  effectiveDate: z.string().optional(),
+  taxCredit: z.string().optional(),
   assignedProcessorId: z.string().uuid().optional().or(z.literal(''))
   .transform(val => val === '' ? null : val),
 });
@@ -22,6 +24,9 @@ const updatePolicyStatusSchema = z.object({
   status: z.enum(['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs', 'sent_to_carrier', 'approved', 'rejected', 'active', 'cancelled']),
   insuranceCompany: z.string().optional(),
   monthlyPremium: z.string().optional(),
+  policyNumber: z.string().optional(),
+  effectiveDate: z.string().optional(),
+  taxCredit: z.string().optional(),
 });
 
 export async function getPolicies(page = 1, limit = 10, search = '', status = '') {
@@ -37,7 +42,6 @@ export async function getPolicies(page = 1, limit = 10, search = '', status = ''
   try {
     const offset = (page - 1) * limit;
     
-    // 2. Crea los alias para la tabla 'users'
     const agent = alias(users, 'agent');
     const processor = alias(users, 'processor');
 
@@ -53,23 +57,23 @@ export async function getPolicies(page = 1, limit = 10, search = '', status = ''
       whereClause = eq(policies.assignedProcessorId, userId);
     }
 
-    // 3. Usa los alias en la consulta
     const policiesQuery = db.select({
       id: policies.id,
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
+      policyNumber: policies.policyNumber,
+      effectiveDate: policies.effectiveDate,
+      taxCredit: policies.taxCredit,
       commissionStatus: policies.commissionStatus,
       createdAt: policies.createdAt,
       customerName: customers.fullName,
       customerId: customers.id,
-      // Usa los alias para seleccionar los nombres
       agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
       processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
     })
     .from(policies)
     .innerJoin(customers, eq(policies.customerId, customers.id))
-    // Usa los alias en los joins
     .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
     .leftJoin(processor, eq(policies.assignedProcessorId, processor.id))
     .orderBy(desc(policies.createdAt))
@@ -121,7 +125,6 @@ export async function getPolicies(page = 1, limit = 10, search = '', status = ''
   }
 }
 
-// ... (las funciones createPolicy y updatePolicyStatus no cambian) ...
 export async function createPolicy(data: z.infer<typeof createPolicySchema>) {
   const session = await auth();
   
@@ -136,16 +139,28 @@ export async function createPolicy(data: z.infer<typeof createPolicySchema>) {
   try {
     const validatedData = createPolicySchema.parse(data);
     
-    await db.insert(policies).values({
+    const policyData: any = {
       customerId: validatedData.customerId,
       insuranceCompany: validatedData.insuranceCompany,
       monthlyPremium: validatedData.monthlyPremium,
       assignedProcessorId: validatedData.assignedProcessorId || null,
       status: 'new_lead',
       commissionStatus: 'pending',
-    });
+    };
 
-    revalidatePath('/policies'); // Corregido para que coincida con la URL real
+    if (validatedData.policyNumber) {
+      policyData.policyNumber = validatedData.policyNumber;
+    }
+    if (validatedData.effectiveDate) {
+      policyData.effectiveDate = validatedData.effectiveDate;
+    }
+    if (validatedData.taxCredit) {
+      policyData.taxCredit = validatedData.taxCredit;
+    }
+    
+    await db.insert(policies).values(policyData);
+
+    revalidatePath('/policies');
     return { success: true, message: 'Policy created successfully' };
   } catch (error) {
     console.error('Create policy error:', error);
@@ -174,17 +189,25 @@ export async function updatePolicyStatus(data: z.infer<typeof updatePolicyStatus
     if (validatedData.insuranceCompany) {
       updateData.insuranceCompany = validatedData.insuranceCompany;
     }
-
     if (validatedData.monthlyPremium) {
       updateData.monthlyPremium = validatedData.monthlyPremium;
+    }
+    if (validatedData.policyNumber) {
+      updateData.policyNumber = validatedData.policyNumber;
+    }
+    if (validatedData.effectiveDate) {
+      updateData.effectiveDate = validatedData.effectiveDate;
+    }
+    if (validatedData.taxCredit) {
+      updateData.taxCredit = validatedData.taxCredit;
     }
 
     await db.update(policies)
       .set(updateData)
       .where(eq(policies.id, validatedData.policyId));
 
-    revalidatePath('/policies'); // Corregido
-    revalidatePath(`/policies/${validatedData.policyId}`); // Corregido
+    revalidatePath('/policies');
+    revalidatePath(`/policies/${validatedData.policyId}`);
     return { success: true, message: 'Policy updated successfully' };
   } catch (error) {
     console.error('Update policy error:', error);
@@ -195,7 +218,6 @@ export async function updatePolicyStatus(data: z.infer<typeof updatePolicyStatus
   }
 }
 
-
 export async function getPolicyById(id: string) {
   const session = await auth();
   
@@ -204,7 +226,6 @@ export async function getPolicyById(id: string) {
   }
 
   try {
-    // TAMBIÉN SE APLICA LA CORRECCIÓN AQUÍ
     const agent = alias(users, 'agent');
     const processor = alias(users, 'processor');
 
@@ -213,6 +234,12 @@ export async function getPolicyById(id: string) {
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
+      policyNumber: policies.policyNumber,
+      effectiveDate: policies.effectiveDate,
+      taxCredit: policies.taxCredit,
+      planLink: policies.planLink,
+      aorLink: policies.aorLink,
+      notes: policies.notes,
       commissionStatus: policies.commissionStatus,
       createdAt: policies.createdAt,
       updatedAt: policies.updatedAt,

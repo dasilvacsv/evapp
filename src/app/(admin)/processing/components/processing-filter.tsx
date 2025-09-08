@@ -4,9 +4,9 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label'; // Importa el componente Label
+import { Label } from '@/components/ui/label';
 
-// Objeto de mapeo para traducir los estados del enum a español
+// Objeto de mapeo para traducir los estados del enum a español (actualizado con el schema)
 const statusTranslations = {
   'all': 'Todos los Estados',
   'new_lead': 'Nuevo Prospecto',

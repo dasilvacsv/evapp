@@ -18,9 +18,9 @@ import { Switch } from '@/components/ui/switch';
 import { updateUserRole, getManagers } from '@/app/(admin)/settings/actions';
 import type { User } from '@/db/schema';
 import { toast } from 'sonner';
-import { Edit, Save, Power, UserRoundCheck, ClipboardList, Shield, Crown, Users, Loader2, LinkIcon } from 'lucide-react';
+import { Edit, Save, Power, UserRoundCheck, ClipboardList, Shield, Crown, Users, Loader2 } from 'lucide-react';
 
-// Mapeo de roles para etiquetas claras y consistentes
+// Mapeo de roles para etiquetas claras y consistentes (actualizado con el schema)
 const roleLabels: Record<string, string> = {
   super_admin: 'Súper Administrador',
   manager: 'Gerente',
