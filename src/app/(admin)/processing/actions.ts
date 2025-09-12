@@ -73,7 +73,8 @@ export async function getProcessingQueue(page = 1, limit = 10, status = '') {
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
-      policyNumber: policies.policyNumber,
+      marketplaceId: policies.marketplaceId, // Cambiado de policyNumber
+      planName: policies.planName, // Nuevo campo
       effectiveDate: policies.effectiveDate,
       planLink: policies.planLink,
       taxCredit: policies.taxCredit,

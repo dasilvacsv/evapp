@@ -17,16 +17,14 @@ import { Loader2 } from 'lucide-react';
 import CustomerFormSection from './_components/customer-form-section';
 import DependentsFormSection from './_components/dependents-form-section';
 import PolicyFormSection from './_components/policy-form-section';
-import DocumentsFormSection from './_components/documents-form-section';
 import PaymentFormSection from './_components/payment-form-section';
 import FormStepper from './_components/form-stepper';
 
 const steps = [
-  { id: 'Titular', name: 'Información del Titular', fields: ['customer'] },
+  { id: 'Titular', name: 'Información y Documentos', fields: ['customer', 'documents'] },
   { id: 'Dependientes', name: 'Dependientes', fields: ['dependents'] },
   { id: 'Póliza', name: 'Datos de la Póliza', fields: ['policy'] },
   { id: 'Pago', name: 'Información de Pago', fields: ['payment'] },
-  { id: 'Documentos', name: 'Documentos', fields: ['documents'] },
 ];
 
 export default function NewCustomerPage() {
@@ -37,15 +35,20 @@ export default function NewCustomerPage() {
 
   const form = useForm<FullApplicationFormData>({
     resolver: zodResolver(createFullApplicationSchema),
-    mode: 'onChange', // Validación en tiempo real
+    mode: 'onChange',
     defaultValues: {
       customer: {
         fullName: "", email: "", phone: "", address: "", county: "", state: "", ssn: "",
+        zipCode: "",
         income: undefined, declaresOtherPeople: false, appliesToCoverage: true,
       },
       dependents: [],
       policy: {
-        insuranceCompany: "", policyNumber: "", monthlyPremium: undefined, taxCredit: undefined,
+        insuranceCompany: "",
+        planName: "",
+        marketplaceId: "",
+        monthlyPremium: undefined,
+        taxCredit: undefined,
         planLink: "", aorLink: "", notes: "",
       },
       documents: [],
@@ -58,16 +61,11 @@ export default function NewCustomerPage() {
 
   async function handleNextStep() {
     const fieldsToValidate = steps[currentStep].fields;
-    console.log("Validando paso:", currentStep, "Campos:", fieldsToValidate);
-    
     // @ts-ignore
     const isValid = await form.trigger(fieldsToValidate);
-    console.log("¿Es válido?", isValid);
 
     if (!isValid) {
       const errorState = form.formState.errors;
-      console.log("Errores encontrados:", errorState);
-      
       let errorCount = 0;
       if (fieldsToValidate.includes('customer') && errorState.customer) errorCount += Object.keys(errorState.customer).length;
       if (fieldsToValidate.includes('policy') && errorState.policy) errorCount += Object.keys(errorState.policy).length;
@@ -94,42 +92,22 @@ export default function NewCustomerPage() {
   }
 
   async function onSubmit(data: FullApplicationFormData) {
-    console.log("Iniciando envío del formulario...", data);
     setIsSubmitting(true);
-    
+    const finalData = { ...data };
+
     try {
-      const result = await createFullApplication(data);
-      console.log("Resultado de createFullApplication:", result);
+      const result = await createFullApplication(finalData);
       
       if (result.success) {
-        toast({ 
-          title: "✅ Éxito", 
-          description: "La aplicación ha sido creada correctamente." 
-        });
+        toast({ title: "✅ Éxito", description: "La aplicación ha sido creada." });
         router.push(`/customers/${result.data?.customerId}`);
       } else {
+        toast({ variant: "destructive", title: "❌ Error", description: result.message || "No se pudo crear la aplicación." });
         console.error("Error en createFullApplication:", result);
-        toast({
-          variant: "destructive",
-          title: "❌ Error al crear la aplicación",
-          description: result.message || "No se pudo crear la aplicación. Revisa los datos.",
-        });
-        
-        // Si hay errores específicos de validación, mostrarlos
-        if (result.errors) {
-          console.error("Errores de validación:", result.errors);
-        }
-        if (result.zodError) {
-          console.error("Errores de Zod:", result.zodError);
-        }
       }
     } catch (error) {
+      toast({ variant: "destructive", title: "❌ Error inesperado", description: "Ocurrió un error. Inténtalo de nuevo." });
       console.error("Error inesperado:", error);
-      toast({
-        variant: "destructive",
-        title: "❌ Error inesperado",
-        description: "Ocurrió un error inesperado. Por favor, inténtalo de nuevo.",
-      });
     } finally {
       setIsSubmitting(false);
     }
@@ -146,11 +124,18 @@ export default function NewCustomerPage() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
-          <div className={currentStep === 0 ? 'block' : 'hidden'}><CustomerFormSection formControl={form.control} /></div>
-          <div className={currentStep === 1 ? 'block' : 'hidden'}><DependentsFormSection formControl={form.control} /></div>
-          <div className={currentStep === 2 ? 'block' : 'hidden'}><PolicyFormSection formControl={form.control} /></div>
-          <div className={currentStep === 3 ? 'block' : 'hidden'}><PaymentFormSection formControl={form.control} /></div>
-          <div className={currentStep === 4 ? 'block' : 'hidden'}><DocumentsFormSection setFormValue={form.setValue} /></div>
+          <div className={currentStep === 0 ? 'block' : 'hidden'}>
+            <CustomerFormSection formControl={form.control} setFormValue={form.setValue} />
+          </div>
+          <div className={currentStep === 1 ? 'block' : 'hidden'}>
+            <DependentsFormSection formControl={form.control} setFormValue={form.setValue} />
+          </div>
+          <div className={currentStep === 2 ? 'block' : 'hidden'}>
+            <PolicyFormSection formControl={form.control} />
+          </div>
+          <div className={currentStep === 3 ? 'block' : 'hidden'}>
+            <PaymentFormSection formControl={form.control} />
+          </div>
 
           {/* Debug info - remover en producción */}
           {process.env.NODE_ENV === 'development' && (
@@ -176,7 +161,13 @@ export default function NewCustomerPage() {
                 Siguiente
               </Button>
             ) : (
-              <Button type="submit" size="lg" disabled={isSubmitting}>
+              // 👇 CAMBIO: Se modifica el botón para tener control explícito del envío
+              <Button 
+                type="button" 
+                size="lg"
+                onClick={form.handleSubmit(onSubmit)}
+                disabled={!form.formState.isValid || isSubmitting}
+              >
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Finalizar y Crear Aplicación
               </Button>

@@ -9,27 +9,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, Edit, CheckCircle, XCircle } from 'lucide-react';
 import { updatePolicyStatus } from '../actions';
 import { toast } from 'sonner';
 
+// CAMBIO: policyNumber -> marketplaceId
 const formSchema = z.object({
   status: z.enum([
-    'new_lead',
-    'contacting',
-    'info_captured',
-    'in_review',
-    'missing_docs',
-    'sent_to_carrier',
-    'approved',
-    'rejected',
-    'active',
-    'cancelled',
+    'new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs', 
+    'sent_to_carrier', 'approved', 'rejected', 'active', 'cancelled',
   ]),
   insuranceCompany: z.string().optional(),
   monthlyPremium: z.string().optional(),
-  policyNumber: z.string().optional(),
+  marketplaceId: z.string().optional(), // <-- CAMBIO
   effectiveDate: z.string().optional(),
   taxCredit: z.string().optional(),
 });
@@ -41,7 +33,7 @@ interface UpdateStatusFormProps {
   currentStatus: string;
   currentCompany?: string;
   currentPremium?: string;
-  currentPolicyNumber?: string;
+  currentMarketplaceId?: string; // <-- CAMBIO
   currentEffectiveDate?: string;
   currentTaxCredit?: string;
 }
@@ -51,7 +43,7 @@ export default function UpdateStatusForm({
   currentStatus,
   currentCompany,
   currentPremium,
-  currentPolicyNumber,
+  currentMarketplaceId, // <-- CAMBIO
   currentEffectiveDate,
   currentTaxCredit,
 }: UpdateStatusFormProps) {
@@ -64,7 +56,7 @@ export default function UpdateStatusForm({
       status: currentStatus as any,
       insuranceCompany: currentCompany || '',
       monthlyPremium: currentPremium || '',
-      policyNumber: currentPolicyNumber || '',
+      marketplaceId: currentMarketplaceId || '', // <-- CAMBIO
       effectiveDate: currentEffectiveDate || '',
       taxCredit: currentTaxCredit || '',
     },
@@ -78,12 +70,12 @@ export default function UpdateStatusForm({
         status: currentStatus as any,
         insuranceCompany: currentCompany || '',
         monthlyPremium: currentPremium || '',
-        policyNumber: currentPolicyNumber || '',
+        marketplaceId: currentMarketplaceId || '', // <-- CAMBIO
         effectiveDate: currentEffectiveDate || '',
         taxCredit: currentTaxCredit || '',
       });
     }
-  }, [open, currentStatus, currentCompany, currentPremium, currentPolicyNumber, currentEffectiveDate, currentTaxCredit, form]);
+  }, [open, currentStatus, currentCompany, currentPremium, currentMarketplaceId, currentEffectiveDate, currentTaxCredit, form]); // <-- CAMBIO
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -103,20 +95,19 @@ export default function UpdateStatusForm({
   };
 
   const statusOptions = [
-    { value: 'new_lead', label: 'Nuevo Contacto' },
-    { value: 'contacting', label: 'Contactando' },
-    { value: 'info_captured', label: 'Información Capturada' },
-    { value: 'in_review', label: 'En Revisión' },
-    { value: 'missing_docs', label: 'Documentos Faltantes' },
-    { value: 'sent_to_carrier', label: 'Enviado a la Aseguradora' },
-    { value: 'approved', label: 'Aprobado', icon: CheckCircle },
-    { value: 'rejected', label: 'Rechazado', icon: XCircle },
-    { value: 'active', label: 'Activo', icon: CheckCircle },
-    { value: 'cancelled', label: 'Cancelado', icon: XCircle },
+      { value: 'new_lead', label: 'Nuevo Contacto' },
+      { value: 'contacting', label: 'Contactando' },
+      { value: 'info_captured', label: 'Información Capturada' },
+      { value: 'in_review', label: 'En Revisión' },
+      { value: 'missing_docs', label: 'Documentos Faltantes' },
+      { value: 'sent_to_carrier', label: 'Enviado a la Aseguradora' },
+      { value: 'approved', label: 'Aprobado', icon: CheckCircle },
+      { value: 'rejected', label: 'Rechazado', icon: XCircle },
+      { value: 'active', label: 'Activo', icon: CheckCircle },
+      { value: 'cancelled', label: 'Cancelado', icon: XCircle },
   ];
 
   const selectedStatus = form.watch('status');
-  const showExtraFields = ['approved', 'active'].includes(selectedStatus);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -187,14 +178,16 @@ export default function UpdateStatusForm({
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
+             {/* --- INICIO DEL CAMBIO EN JSX --- */}
             <div className="grid gap-2">
-              <Label htmlFor="policyNumber">Número de Póliza</Label>
+              <Label htmlFor="marketplaceId">ID Marketplace</Label>
               <Input
-                id="policyNumber"
-                {...form.register('policyNumber')}
-                placeholder="ej. POL-2024-001"
+                id="marketplaceId"
+                {...form.register('marketplaceId')}
+                placeholder="ej. MKP123456"
               />
             </div>
+             {/* --- FIN DEL CAMBIO EN JSX --- */}
             <div className="grid gap-2">
               <Label htmlFor="effectiveDate">Fecha Efectiva</Label>
               <Input

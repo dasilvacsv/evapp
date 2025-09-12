@@ -1,5 +1,3 @@
-// app/(admin)/policies/components/policy-filters.tsx
-
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -9,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Filter } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 
-// Mapeo de estados de póliza a un formato legible y en español
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos los Estados' },
   { value: 'new_lead', label: 'Nuevo Contacto' },
@@ -45,9 +42,7 @@ export default function PolicyFilters() {
   }, 300);
 
   return (
-    // Se elimina el div padre con "flex flex-col sm:flex-row..."
     <div className="flex flex-col sm:flex-row items-stretch sm:items-end space-y-4 sm:space-y-0 sm:space-x-4">
-      {/* Grupo de control de búsqueda */}
       <div className="flex-1 max-w-lg space-y-2">
         <Label htmlFor="search-input" className="text-sm font-medium text-muted-foreground">
           Buscar Pólizas
@@ -57,7 +52,8 @@ export default function PolicyFilters() {
           <Input
             id="search-input"
             type="search"
-            placeholder="Buscar por cliente, póliza o agente..."
+            // CAMBIO: Texto del placeholder actualizado
+            placeholder="Buscar por cliente, ID Marketplace..."
             className="pl-9 pr-4"
             defaultValue={searchParams.get('search')?.toString()}
             onChange={(e) => handleSearch(e.target.value)}
@@ -65,7 +61,6 @@ export default function PolicyFilters() {
         </div>
       </div>
 
-      {/* Grupo de control de estado */}
       <div className="w-full sm:w-auto space-y-2">
         <Label htmlFor="status-select" className="text-sm font-medium text-muted-foreground">
           Filtrar por Estado

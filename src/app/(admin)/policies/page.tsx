@@ -41,10 +41,10 @@ export default function PoliciesPage() {
   const status = searchParams.get('status') || '';
   const itemsPerPage = 10;
 
-  const [policies, setPolicies] = useState([]);
+  const [policies, setPolicies] = useState<any[]>([]); // Se puede definir un tipo más estricto
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     const fetchPolicies = async () => {
@@ -54,7 +54,7 @@ export default function PoliciesPage() {
         const { policies, pagination } = await getPolicies(page, itemsPerPage, search, status);
         setPolicies(policies);
         setPagination(pagination);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to fetch policies:", err);
         setError(err);
       } finally {
@@ -112,7 +112,8 @@ export default function PoliciesPage() {
                     <TableHead>Cliente</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Comisión</TableHead>
-                    <TableHead className="hidden md:table-cell">N° Póliza</TableHead>
+                    {/* CAMBIO: Título de la columna */}
+                    <TableHead className="hidden md:table-cell">ID Marketplace</TableHead> 
                     <TableHead className="hidden md:table-cell">Aseguradora</TableHead>
                     <TableHead className="hidden md:table-cell">Prima Mensual</TableHead>
                     <TableHead className="hidden lg:table-cell">Fecha Efectiva</TableHead>
@@ -134,8 +135,9 @@ export default function PoliciesPage() {
                           {getCommissionStatusInfo(policy.commissionStatus).label}
                         </Badge>
                       </TableCell>
+                      {/* CAMBIO: Dato mostrado en la celda */}
                       <TableCell className="hidden md:table-cell text-sm text-gray-600">
-                        {policy.policyNumber || 'N/A'}
+                        {policy.marketplaceId || 'N/A'}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">{policy.insuranceCompany || 'N/A'}</TableCell>
                       <TableCell className="hidden md:table-cell">
@@ -152,7 +154,8 @@ export default function PoliciesPage() {
                             currentStatus={policy.status}
                             currentCompany={policy.insuranceCompany || ''}
                             currentPremium={policy.monthlyPremium || ''}
-                            currentPolicyNumber={policy.policyNumber || ''}
+                            // CAMBIO: Prop renombrada
+                            currentMarketplaceId={policy.marketplaceId || ''}
                             currentEffectiveDate={policy.effectiveDate || ''}
                             currentTaxCredit={policy.taxCredit || ''}
                           />

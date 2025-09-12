@@ -35,6 +35,7 @@ const translateStatus = (status: string) => {
 };
 
 export default async function PolicyDetailPage({ params }: PageProps) {
+  
   const policy = await getPolicyById(params.policyId);
 
   const getStatusColor = (status: string) => {
@@ -84,7 +85,7 @@ export default async function PolicyDetailPage({ params }: PageProps) {
           currentStatus={policy.status}
           currentCompany={policy.insuranceCompany || ''}
           currentPremium={policy.monthlyPremium || ''}
-          currentPolicyNumber={policy.policyNumber || ''}
+          currentMarketplaceId={policy.marketplaceId || ''}
           currentEffectiveDate={policy.effectiveDate || ''}
           currentTaxCredit={policy.taxCredit || ''}
         />
@@ -121,12 +122,12 @@ export default async function PolicyDetailPage({ params }: PageProps) {
             <Separator />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {policy.policyNumber && (
+              {policy.marketplaceId && (
                 <div className="flex items-center space-x-3">
                   <FileCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Número de Póliza</p>
-                    <p className="font-semibold">{policy.policyNumber}</p>
+                    <p className="text-sm font-medium text-muted-foreground">ID Marketplace</p>
+                    <p className="font-semibold">{policy.marketplaceId}</p>
                   </div>
                 </div>
               )}

@@ -6,10 +6,10 @@ import {
   GetObjectCommand
 } from "@aws-sdk/client-s3";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner"; // Conservado si lo usas en otro lado
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
 
-// Configuración del cliente S3 (sin cambios)
+// Configuración del cliente S3
 const s3Client = new S3Client({
   region: process.env.S3_REGION || "us-east-1",
   endpoint: `https://${process.env.S3_ENDPOINT}:${process.env.S3_PORT || 443}`,
@@ -24,7 +24,6 @@ const BUCKET_NAME = process.env.S3_BUCKET || "default";
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-// --- 👇 NUEVA FUNCIÓN PARA SUBIDAS DESDE EL NAVEGADOR ---
 /**
  * Genera una URL prefirmada para que el navegador pueda subir un archivo directamente a S3.
  * Esto es más seguro y eficiente que pasar el archivo por nuestro servidor.
@@ -57,18 +56,17 @@ export async function createPresignedPostForUpload({ userId, fileName, fileType 
   }
 }
 
-
-// --- FUNCIONES ORIGINALES (CONSERVADAS Y FUNCIONALES) ---
-
 /**
- * Genera una URL prefirmada para DESCARGAR un archivo desde S3.
- * Útil para mostrar imágenes o enlaces de descarga privados.
+ * CAMBIO: Renombrado de 'getPresignedUrl' a 'getPresignedUrlForDownload' para mayor claridad.
+ * Genera una URL prefirmada y temporal para DESCARGAR un archivo desde S3.
+ * Esto permite al frontend mostrar imágenes o proporcionar enlaces de descarga seguros.
  */
-export async function getPresignedUrl(key: string, expiresIn = 3600): Promise<string> {
-  const command = new GetObjectCommand({ // Necesitarás importar GetObjectCommand
+export async function getPresignedUrlForDownload(key: string, expiresIn = 3600): Promise<string> {
+  const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
   });
+  // getSignedUrl crea la URL segura con una firma y tiempo de expiración.
   return await getSignedUrl(s3Client, command, { expiresIn });
 }
 

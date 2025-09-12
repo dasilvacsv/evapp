@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getCommissionablePolicies, getCommissionBatches, getCommissionStats } from './actions';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,7 +19,8 @@ interface Policy {
   agentName: string;
   insuranceCompany: string;
   monthlyPremium: number;
-  policyNumber?: string;
+  marketplaceId?: string; // Cambiado de policyNumber
+  planName?: string; // Nuevo campo
   taxCredit?: number;
   effectiveDate?: string;
 }
@@ -214,7 +215,8 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Agente</TableHead>
                       <TableHead>Compañía</TableHead>
-                      <TableHead>N° Póliza</TableHead>
+                      <TableHead>Marketplace ID</TableHead>
+                      <TableHead>Plan</TableHead>
                       <TableHead className="text-right">Prima Mensual</TableHead>
                       <TableHead className="text-right">Crédito Fiscal</TableHead>
                       <TableHead className="text-right">Comisión Estimada</TableHead>
@@ -235,7 +237,8 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                         <TableCell className="font-medium text-gray-900">{policy.customerName}</TableCell>
                         <TableCell>{policy.agentName}</TableCell>
                         <TableCell>{policy.insuranceCompany}</TableCell>
-                        <TableCell className="text-sm text-gray-600">{policy.policyNumber || 'N/A'}</TableCell>
+                        <TableCell className="text-sm text-gray-600">{policy.marketplaceId || 'N/A'}</TableCell>
+                        <TableCell className="text-sm text-gray-600">{policy.planName || 'N/A'}</TableCell>
                         <TableCell className="text-right font-semibold text-gray-700">
                           {formatCurrency(Number(policy.monthlyPremium))}
                         </TableCell>

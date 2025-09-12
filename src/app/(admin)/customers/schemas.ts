@@ -1,3 +1,4 @@
+// (admin)/customers/schemas.ts
 import { z } from 'zod';
 
 // Schema para el cliente - CON VALIDACIONES MEJORADAS
@@ -7,8 +8,13 @@ const customerSchema = z.object({
   birthDate: z.date({ required_error: "La fecha de nacimiento es requerida" }),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
   phone: z.string().optional(),
-  ssn: z.string().optional(),
+  ssn: z.string()
+    .transform(val => val.replace(/\D/g, '')) // Elimina no-dígitos
+    .pipe(z.string().length(9, "El SSN debe tener 9 dígitos"))
+    .optional()
+    .or(z.literal("")),
   appliesToCoverage: z.boolean().default(true),
+  zipCode: z.string().optional(),
   immigrationStatus: z.enum([
     'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
     'political_asylum', 'parole', 'notice_of_action', 'other'
@@ -27,22 +33,15 @@ const customerSchema = z.object({
   declaresOtherPeople: z.boolean().default(false),
 });
 
-// Schema para dependientes - CON VALIDACIONES MEJORADAS
-const dependentSchema = z.object({
-  fullName: z.string().min(1, "El nombre del dependiente es requerido").max(255, "El nombre es demasiado largo"),
-  relationship: z.string().min(1, "La relación es requerida"),
-  birthDate: z.date().optional(),
-  immigrationStatus: z.enum([
-    'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
-    'political_asylum', 'parole', 'notice_of_action', 'other'
-  ]).optional(),
-  appliesToPolicy: z.boolean().default(true),
-});
+
 
 // Schema para la póliza - CON VALIDACIONES MEJORADAS
 const policySchema = z.object({
   insuranceCompany: z.string().min(1, "La aseguradora es requerida").max(100, "El nombre de la aseguradora es demasiado largo"),
-  policyNumber: z.string().optional(),
+  // MODIFICADO: Renombrado
+  marketplaceId: z.string().optional(),
+  // NUEVO: Nombre del plan
+  planName: z.string().min(1, "El nombre del plan es requerido."),
   monthlyPremium: z.number().positive("La prima debe ser mayor a 0").optional(),
   effectiveDate: z.date().optional(),
   planLink: z.string().url("Debe ser una URL válida").optional().or(z.literal("")),
@@ -57,6 +56,22 @@ const documentSchema = z.object({
   fileName: z.string().min(1, "El nombre del archivo es requerido"),
   fileType: z.string().min(1, "El tipo de archivo es requerido"),
   fileSize: z.number().min(1, "El tamaño del archivo debe ser mayor a 0"),
+  // NUEVO: ID opcional del dependiente al que pertenece
+  dependentId: z.string().optional(),
+});
+
+// Schema para dependientes - CON VALIDACIONES MEJORADAS
+const dependentSchema = z.object({
+  fullName: z.string().min(1, "El nombre del dependiente es requerido").max(255, "El nombre es demasiado largo"),
+  relationship: z.string().min(1, "La relación es requerida"),
+  birthDate: z.date().optional(),
+  immigrationStatus: z.enum([
+    'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
+    'political_asylum', 'parole', 'notice_of_action', 'other'
+  ]).optional(),
+  appliesToPolicy: z.boolean().default(true),
+  documents: z.array(documentSchema).default([]),
+  
 });
 
 // Schema para método de pago - CON VALIDACIONES CONDICIONALES MEJORADAS
@@ -98,6 +113,23 @@ export const createFullApplicationSchema = z.object({
 }, {
   message: "Los dependientes no pueden tener nombres duplicados",
   path: ["dependents"]
+});
+
+
+
+export const createAppointmentSchema = z.object({
+  customerId: z.string().uuid("Debes seleccionar un cliente."),
+  policyId: z.string().uuid("Debes seleccionar una póliza."),
+  appointmentDate: z.date({ required_error: "La fecha de la cita es obligatoria." }),
+  notes: z.string().max(500, "Las notas no pueden exceder los 500 caracteres.").optional(),
+});
+
+export const createClaimSchema = z.object({
+  customerId: z.string().uuid("Debes seleccionar un cliente."),
+  policyId: z.string().uuid("Debes seleccionar una póliza."),
+  dateFiled: z.date({ required_error: "La fecha del reclamo es obligatoria." }),
+  claimNumber: z.string().max(100, "El número de reclamo es muy largo.").optional(),
+  description: z.string().min(10, "La descripción debe tener al menos 10 caracteres.").max(1000, "La descripción no puede exceder los 1000 caracteres."),
 });
 
 export type FullApplicationFormData = z.infer<typeof createFullApplicationSchema>;

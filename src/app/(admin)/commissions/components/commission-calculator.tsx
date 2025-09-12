@@ -28,7 +28,8 @@ interface Policy {
   agentName: string;
   insuranceCompany: string;
   monthlyPremium: number;
-  policyNumber?: string;
+  marketplaceId?: string; // Cambiado de policyNumber
+  planName?: string; // Nuevo campo
   taxCredit?: number;
 }
 
@@ -185,7 +186,8 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">Cliente</TableHead>
-                    <TableHead className="text-xs">N° Póliza</TableHead>
+                    <TableHead className="text-xs">Marketplace ID</TableHead>
+                    <TableHead className="text-xs">Plan</TableHead>
                     <TableHead className="text-xs text-right">Prima</TableHead>
                     <TableHead className="text-xs text-right">Comisión</TableHead>
                   </TableRow>
@@ -194,7 +196,8 @@ export default function CommissionCalculator({ policies, selectedPolicies }: Com
                   {selectedPolicies.map((policy) => (
                     <TableRow key={policy.id} className="text-sm">
                       <TableCell>{policy.customerName}</TableCell>
-                      <TableCell className="text-xs text-gray-600">{policy.policyNumber || 'N/A'}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{policy.marketplaceId || 'N/A'}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{policy.planName || 'N/A'}</TableCell>
                       <TableCell className="text-right">{formatCurrency(Number(policy.monthlyPremium))}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         {formatCurrency(Number(policy.monthlyPremium) * 0.1)}

@@ -52,11 +52,36 @@ export const documentTypeEnum = pgEnum("document_type", [
 export const taxDeclarationTypeEnum = pgEnum("tax_declaration_type", ["w2", "1099", "not_yet_declared"]);
 
 export const paymentMethodTypeEnum = pgEnum("payment_method_type", ["debit_card", "credit_card", "bank_account"]);
-
+export const appointmentStatusEnum = pgEnum("appointment_status", ["scheduled", "completed", "cancelled", "rescheduled"]);
+export const claimStatusEnum = pgEnum("claim_status", ["submitted", "in_review", "information_requested", "approved", "denied"]);
 
 // --- TABLAS ---
 
 // TABLAS ORIGINALES (MODIFICADAS Y CONSERVADAS)
+
+export const appointments = pgTable("appointments", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }), // Agente con el que es la cita
+    appointmentDate: timestamp("appointment_date").notNull(),
+    notes: text("notes"),
+    status: appointmentStatusEnum("status").notNull().default("scheduled"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const claims = pgTable("claims", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    claimNumber: varchar("claim_number", { length: 100 }), // Número de reclamo de la aseguradora
+    description: text("description").notNull(),
+    dateFiled: date("date_filed").notNull(),
+    status: claimStatusEnum("status").notNull().default("submitted"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -94,13 +119,16 @@ export const customers = pgTable("customers", {
   birthDate: date("birth_date").notNull(),
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
-  ssn: text("ssn"),
+  // MODIFICADO: SSN ahora es un varchar de 9 para almacenar solo los dígitos
+  ssn: varchar("ssn", { length: 9 }),
   
   // --- 👇 CAMPOS AÑADIDOS/MODIFICADOS DEL FORMULARIO DETALLADO ---
   appliesToCoverage: boolean("applies_to_coverage"),
   immigrationStatus: immigrationStatusEnum("immigration_status"),
   documentType: documentTypeEnum("document_type"),
   address: text("address"),
+  // NUEVO: Campo para el código postal
+  zipCode: varchar("zip_code", { length: 10 }),
   county: varchar("county", { length: 100 }),
   state: varchar("state", { length: 100 }),
   taxType: taxDeclarationTypeEnum("tax_type"),
@@ -119,8 +147,11 @@ export const policies = pgTable("policies", {
   insuranceCompany: varchar("insurance_company", { length: 100 }),
   monthlyPremium: decimal("monthly_premium", { precision: 10, scale: 2 }),
   
-  // --- 👇 CAMPOS AÑADIDOS/MODIFICADOS DEL FORMULARIO DETALLADO ---
-  policyNumber: varchar("policy_number", { length: 100 }),
+   // --- 👇 CAMPOS AÑADIDOS/MODIFICADOS DEL FORMULARIO DETALLADO ---
+  // MODIFICADO: Renombrado de policyNumber a marketplaceId
+  marketplaceId: varchar("marketplace_id", { length: 100 }),
+  // NUEVO: Campo para el nombre del plan
+  planName: varchar("plan_name", { length: 255 }),
   effectiveDate: date("effective_date"),
   planLink: text("plan_link"),
   taxCredit: decimal("tax_credit", { precision: 10, scale: 2 }),
@@ -209,6 +240,8 @@ export const documents = pgTable("documents", {
     customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
     policyId: uuid("policy_id").references(() => policies.id, { onDelete: "set null" }), // Puede estar asociado a una póliza específica
     s3Key: text("s3_key").notNull().unique(), // La ruta del archivo en S3
+    // NUEVO: Clave foránea opcional para asociar un documento a un dependiente específico
+  dependentId: uuid("dependent_id").references(() => dependents.id, { onDelete: "set null" }),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileType: varchar("file_type", { length: 100 }).notNull(),
     fileSize: integer("file_size").notNull(), // En bytes
@@ -244,12 +277,14 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
 }));
 
 export const policiesRelations = relations(policies, ({ one, many }) => ({
-  customer: one(customers, { fields: [policies.customerId], references: [customers.id] }),
-  assignedProcessor: one(users, { fields: [policies.assignedProcessorId], references: [users.id] }),
-  commissionRecords: many(commissionRecords),
-  // 👇 Nuevas relaciones
-  paymentMethod: one(paymentMethods),
-  documents: many(documents),
+    customer: one(customers, { fields: [policies.customerId], references: [customers.id] }),
+    assignedProcessor: one(users, { fields: [policies.assignedProcessorId], references: [users.id] }),
+    commissionRecords: many(commissionRecords),
+    paymentMethod: one(paymentMethods),
+    documents: many(documents),
+    // +++ NUEVAS RELACIONES PARA POST-VENTA +++
+    appointments: many(appointments),
+    claims: many(claims),
 }));
 
 // Relaciones originales conservadas
@@ -272,8 +307,10 @@ export const commissionRecordsRelations = relations(commissionRecords, ({ one })
 }));
 
 // 👇 Relaciones para las nuevas tablas
-export const dependentsRelations = relations(dependents, ({ one }) => ({
-    customer: one(customers, { fields: [dependents.customerId], references: [customers.id] }),
+export const dependentsRelations = relations(dependents, ({ one, many }) => ({
+  customer: one(customers, { fields: [dependents.customerId], references: [customers.id] }),
+  // NUEVO: Relación para que un dependiente pueda tener muchos documentos
+  documents: many(documents),
 }));
 
 export const paymentMethodsRelations = relations(paymentMethods, ({ one }) => ({
@@ -281,7 +318,38 @@ export const paymentMethodsRelations = relations(paymentMethods, ({ one }) => ({
 }));
 
 export const documentsRelations = relations(documents, ({ one }) => ({
-    customer: one(customers, { fields: [documents.customerId], references: [customers.id] }),
-    policy: one(policies, { fields: [documents.policyId], references: [policies.id] }),
-    uploadedByUser: one(users, { fields: [documents.uploadedByUserId], references: [users.id] }),
+  customer: one(customers, { fields: [documents.customerId], references: [customers.id] }),
+  policy: one(policies, { fields: [documents.policyId], references: [policies.id] }),
+  uploadedByUser: one(users, { fields: [documents.uploadedByUserId], references: [users.id] }),
+  // NUEVO: Relación inversa para el documento
+  dependent: one(dependents, { fields: [documents.dependentId], references: [dependents.id] }),
 }));
+
+export const appointmentsRelations = relations(appointments, ({ one }) => ({
+    policy: one(policies, { fields: [appointments.policyId], references: [policies.id] }),
+    customer: one(customers, { fields: [appointments.customerId], references: [customers.id] }),
+    agent: one(users, { fields: [appointments.agentId], references: [users.id] }),
+}));
+
+export const claimsRelations = relations(claims, ({ one }) => ({
+    policy: one(policies, { fields: [claims.policyId], references: [policies.id] }),
+    customer: one(customers, { fields: [claims.customerId], references: [customers.id] }),
+}));
+
+// Add type definitions for better TypeScript support
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Customer = typeof customers.$inferSelect;
+export type NewCustomer = typeof customers.$inferInsert;
+export type Policy = typeof policies.$inferSelect;
+export type NewPolicy = typeof policies.$inferInsert;
+export type Dependent = typeof dependents.$inferSelect;
+export type NewDependent = typeof dependents.$inferInsert;
+export type PaymentMethod = typeof paymentMethods.$inferSelect;
+export type NewPaymentMethod = typeof paymentMethods.$inferInsert;
+export type Document = typeof documents.$inferSelect;
+export type NewDocument = typeof documents.$inferInsert;
+export type Appointment = typeof appointments.$inferSelect;
+export type NewAppointment = typeof appointments.$inferInsert;
+export type Claim = typeof claims.$inferSelect;
+export type NewClaim = typeof claims.$inferInsert;

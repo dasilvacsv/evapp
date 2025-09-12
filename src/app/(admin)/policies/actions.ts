@@ -12,7 +12,7 @@ const createPolicySchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   insuranceCompany: z.string().min(1, 'Insurance company is required'),
   monthlyPremium: z.string().min(1, 'Monthly premium is required'),
-  policyNumber: z.string().optional(),
+  marketplaceId: z.string().optional(), // CAMBIO REALIZADO
   effectiveDate: z.string().optional(),
   taxCredit: z.string().optional(),
   assignedProcessorId: z.string().uuid().optional().or(z.literal(''))
@@ -24,7 +24,7 @@ const updatePolicyStatusSchema = z.object({
   status: z.enum(['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs', 'sent_to_carrier', 'approved', 'rejected', 'active', 'cancelled']),
   insuranceCompany: z.string().optional(),
   monthlyPremium: z.string().optional(),
-  policyNumber: z.string().optional(),
+  marketplaceId: z.string().optional(), // CAMBIO REALIZADO
   effectiveDate: z.string().optional(),
   taxCredit: z.string().optional(),
 });
@@ -62,7 +62,7 @@ export async function getPolicies(page = 1, limit = 10, search = '', status = ''
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
-      policyNumber: policies.policyNumber,
+      marketplaceId: policies.marketplaceId, // CAMBIO REALIZADO
       effectiveDate: policies.effectiveDate,
       taxCredit: policies.taxCredit,
       commissionStatus: policies.commissionStatus,
@@ -148,8 +148,8 @@ export async function createPolicy(data: z.infer<typeof createPolicySchema>) {
       commissionStatus: 'pending',
     };
 
-    if (validatedData.policyNumber) {
-      policyData.policyNumber = validatedData.policyNumber;
+    if (validatedData.marketplaceId) { // CAMBIO REALIZADO
+      policyData.marketplaceId = validatedData.marketplaceId; // CAMBIO REALIZADO
     }
     if (validatedData.effectiveDate) {
       policyData.effectiveDate = validatedData.effectiveDate;
@@ -192,8 +192,8 @@ export async function updatePolicyStatus(data: z.infer<typeof updatePolicyStatus
     if (validatedData.monthlyPremium) {
       updateData.monthlyPremium = validatedData.monthlyPremium;
     }
-    if (validatedData.policyNumber) {
-      updateData.policyNumber = validatedData.policyNumber;
+    if (validatedData.marketplaceId) { // CAMBIO REALIZADO
+      updateData.marketplaceId = validatedData.marketplaceId; // CAMBIO REALIZADO
     }
     if (validatedData.effectiveDate) {
       updateData.effectiveDate = validatedData.effectiveDate;
@@ -234,7 +234,7 @@ export async function getPolicyById(id: string) {
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
-      policyNumber: policies.policyNumber,
+      marketplaceId: policies.marketplaceId, // CAMBIO REALIZADO
       effectiveDate: policies.effectiveDate,
       taxCredit: policies.taxCredit,
       planLink: policies.planLink,

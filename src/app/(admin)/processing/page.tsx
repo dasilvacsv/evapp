@@ -165,9 +165,14 @@ export default async function ProcessingPage({ searchParams }: PageProps) {
                             <div className="text-xs text-muted-foreground">
                               Póliza ID: {policy.id}
                             </div>
-                            {policy.policyNumber && (
+                            {policy.marketplaceId && (
                               <div className="text-xs text-muted-foreground">
-                                Número: {policy.policyNumber}
+                                Marketplace ID: {policy.marketplaceId}
+                              </div>
+                            )}
+                            {policy.planName && (
+                              <div className="text-xs text-muted-foreground">
+                                Plan: {policy.planName}
                               </div>
                             )}
                           </div>

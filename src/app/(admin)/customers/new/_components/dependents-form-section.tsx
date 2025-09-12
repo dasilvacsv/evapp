@@ -1,8 +1,6 @@
-// (admin)/customers/new/_components/dependents-form-section.tsx
-
 'use client';
 
-import { Control, useFieldArray } from "react-hook-form";
+import { Control, useFieldArray, UseFormSetValue } from "react-hook-form";
 import { FullApplicationFormData } from "../../schemas";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,13 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { PlusCircle, Trash2 } from "lucide-react";
-import FormDateInput from "./form-date-input"; // 👈 Importamos el nuevo componente de fecha
+import BirthDateFields from "./birth-date-fields";
+import FileUploader from "./file-uploader";
 
 interface Props {
   formControl: Control<FullApplicationFormData>;
+  // Estandarizamos el nombre de la prop a 'setFormValue' para consistencia
+  setFormValue: UseFormSetValue<FullApplicationFormData>;
 }
 
-export default function DependentsFormSection({ formControl }: Props) {
+export default function DependentsFormSection({ formControl, setFormValue }: Props) {
   const { fields, append, remove } = useFieldArray({
     control: formControl,
     name: "dependents",
@@ -48,12 +49,11 @@ export default function DependentsFormSection({ formControl }: Props) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nombre Completo*</FormLabel>
-                    <FormControl><Input placeholder="Jane Doe" {...field} /></FormControl>
+                    <FormControl><Input placeholder="JANE DOE" {...field} className="uppercase" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {/* 👇 CAMBIO: Parentesco ahora es un Select */}
               <FormField
                 control={formControl}
                 name={`dependents.${index}.relationship`}
@@ -74,7 +74,6 @@ export default function DependentsFormSection({ formControl }: Props) {
                   </FormItem>
                 )}
               />
-              {/* 👇 CAMBIO: Usamos el nuevo componente de fecha */}
               <FormField
                 control={formControl}
                 name={`dependents.${index}.birthDate`}
@@ -82,7 +81,7 @@ export default function DependentsFormSection({ formControl }: Props) {
                   <FormItem>
                     <FormLabel>Fecha de Nacimiento*</FormLabel>
                     <FormControl>
-                      <FormDateInput field={field} />
+                      <BirthDateFields value={field.value} onChange={field.onChange} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -113,31 +112,48 @@ export default function DependentsFormSection({ formControl }: Props) {
               />
             </div>
             <FormField
-                control={formControl}
-                name={`dependents.${index}.appliesToPolicy`}
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>¿Aplica a la Póliza?</FormLabel>
-                    <FormControl>
-                        <RadioGroup
-                        onValueChange={(value) => field.onChange(value === "true")}
-                        defaultValue={String(field.value)}
-                        className="flex items-center space-x-4 pt-2"
-                        >
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                            <FormControl><RadioGroupItem value="true" /></FormControl>
-                            <FormLabel className="font-normal">Sí</FormLabel>
-                        </FormItem>
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                            <FormControl><RadioGroupItem value="false" /></FormControl>
-                            <FormLabel className="font-normal">No</FormLabel>
-                        </FormItem>
-                        </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>
-                )}
+              control={formControl}
+              name={`dependents.${index}.appliesToPolicy`}
+              render={({ field }) => (
+                  <FormItem>
+                  <FormLabel>¿Aplica a la Póliza?</FormLabel>
+                  <FormControl>
+                      <RadioGroup
+                      onValueChange={(value) => field.onChange(value === "true")}
+                      defaultValue={String(field.value)}
+                      className="flex items-center space-x-4 pt-2"
+                      >
+                      <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl><RadioGroupItem value="true" /></FormControl>
+                          <FormLabel className="font-normal">Sí</FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl><RadioGroupItem value="false" /></FormControl>
+                          <FormLabel className="font-normal">No</FormLabel>
+                      </FormItem>
+                      </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                  </FormItem>
+              )}
             />
+            {/* Sección de documentos para este dependiente específico */}
+            <div className="pt-4 mt-4 border-t">
+              <h5 className="font-medium mb-2">Documentos del Dependiente</h5>
+              <FormField
+                control={formControl}
+                name={`dependents.${index}.documents`}
+                render={({ field }) => (
+                  <FileUploader
+                    uploadedFiles={field.value || []}
+                    onFilesChange={(newFiles) => {
+                      // Usamos 'setFormValue' para mantener la consistencia
+                      setFormValue(`dependents.${index}.documents`, newFiles, { shouldValidate: true });
+                    }}
+                  />
+                )}
+              />
+            </div>
           </div>
         ))}
 
@@ -150,7 +166,8 @@ export default function DependentsFormSection({ formControl }: Props) {
             // @ts-ignore
             birthDate: undefined,
             immigrationStatus: undefined,
-            appliesToPolicy: true 
+            appliesToPolicy: true,
+            documents: [] // Se inicializa el array de documentos para el nuevo dependiente
           })}
         >
           <PlusCircle className="mr-2 h-4 w-4" />

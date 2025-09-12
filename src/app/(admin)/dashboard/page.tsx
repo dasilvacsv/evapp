@@ -1,5 +1,26 @@
 // app/(admin)/dashboard/page.tsx
 
+/*
+ * =================================================================
+ * OBJETIVOS DEL MÓDULO: REPORTES Y DASHBOARDS
+ * =================================================================
+ * * 1. Reportes y Dashboards:
+ * - Crear un módulo de reportes que replique los informes de 
+ * productividad de Excel. Esto implicará desarrollar una nueva 
+ * sección o página (ej: /reports) con funcionalidades de 
+ * filtrado avanzado (por fechas, agentes, equipos, etc.) y 
+ * la capacidad de exportar los datos (ej: a CSV o PDF).
+ * * 2. Vistas Jerárquicas en Dashboards:
+ * - Diseñar dashboards con vistas jerárquicas: agentes ven sus 
+ * datos, managers los de su equipo, y la dirección (super_admin)
+ * ve el panorama completo.
+ * - ESTADO ACTUAL: Esta funcionalidad ya está implementada.
+ * El componente `DashboardContent` y la función `getDashboardStats`
+ * trabajan juntos para filtrar los datos y renderizar el panel
+ * adecuado según el rol del usuario que ha iniciado sesión.
+ * * =================================================================
+ */
+
 import { Suspense } from 'react';
 import { getDashboardStats } from './actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';

@@ -28,6 +28,7 @@ const formSchema = z.object({
   customerId: z.string().min(1, 'El cliente es obligatorio.'),
   insuranceCompany: z.string().min(1, 'El nombre de la aseguradora es obligatorio.'),
   monthlyPremium: z.string().min(1, 'La prima mensual es obligatoria.'),
+  marketplaceId: z.string().optional(), // <-- AÑADIDO
   assignedProcessorId: z.string().optional(),
 });
 
@@ -49,6 +50,7 @@ export default function PolicyForm() {
       customerId: '',
       insuranceCompany: '',
       monthlyPremium: '',
+      marketplaceId: '', 
       assignedProcessorId: '',
     },
   });
@@ -192,6 +194,15 @@ export default function PolicyForm() {
               <p className="text-sm text-red-600">{form.formState.errors.monthlyPremium.message}</p>
             )}
           </div>
+
+          <div className="space-y-2">
+                <Label htmlFor="marketplaceId">ID Marketplace</Label>
+                <Input
+                id="marketplaceId"
+                {...form.register('marketplaceId')}
+                placeholder="Opcional"
+                />
+            </div>
 
           {/* Campo de Procesador Asignado con Combobox */}
           <div className="space-y-2">

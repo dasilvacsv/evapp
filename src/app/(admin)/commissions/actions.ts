@@ -42,7 +42,8 @@ export async function getCommissionablePolicies(page = 1, limit = 10, search = '
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
-      policyNumber: policies.policyNumber,
+      marketplaceId: policies.marketplaceId, // Cambiado de policyNumber
+      planName: policies.planName, // Nuevo campo
       taxCredit: policies.taxCredit,
       effectiveDate: policies.effectiveDate,
       commissionStatus: policies.commissionStatus,
