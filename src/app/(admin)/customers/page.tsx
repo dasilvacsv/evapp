@@ -77,7 +77,7 @@ export default function CustomersPage({ searchParams }: PageProps) {
         <Button asChild size="lg">
           <Link href="/customers/new">
             <PlusCircle className="mr-2 h-5 w-5" />
-            Nueva Aplicación
+            Nueva Venta
           </Link>
         </Button>
       </header>

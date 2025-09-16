@@ -116,7 +116,7 @@ export default function NewCustomerPage() {
   return (
     <div className="p-4 md:p-8 space-y-12 max-w-4xl mx-auto">
       <header className="space-y-4">
-        <h1 className="text-3xl font-bold tracking-tight text-center">Nueva Aplicación de Cliente</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-center">Nueva Venta de Cliente</h1>
         <div className="pb-10">
           <FormStepper steps={steps} currentStep={currentStep} />
         </div>
