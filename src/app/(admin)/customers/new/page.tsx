@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createFullApplicationSchema, FullApplicationFormData } from '../schemas';
 import { createFullApplication } from '../actions';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 // UI Components
@@ -30,6 +30,7 @@ const steps = [
 export default function NewCustomerPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -39,7 +40,7 @@ export default function NewCustomerPage() {
     defaultValues: {
       customer: {
         fullName: "", email: "", phone: "", address: "", county: "", state: "", ssn: "",
-        zipCode: "",
+        zipCode: "", immigrationStatusOther: "", documentTypeOther: "",
         income: undefined, declaresOtherPeople: false, appliesToCoverage: true,
       },
       dependents: [],
@@ -58,6 +59,44 @@ export default function NewCustomerPage() {
       }
     },
   });
+
+  // Detectar cambios en el formulario
+  useEffect(() => {
+    const subscription = form.watch(() => {
+      setHasUnsavedChanges(true);
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
+
+  // Validación antes de salir de la página
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && !isSubmitting) {
+        e.preventDefault();
+        e.returnValue = "Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, isSubmitting]);
+
+  // Validación para navegación del router
+  useEffect(() => {
+    const handleRouteChange = () => {
+      if (hasUnsavedChanges && !isSubmitting) {
+        const confirmLeave = window.confirm("Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?");
+        if (!confirmLeave) {
+          throw new Error("Route change cancelled by user");
+        }
+      }
+    };
+
+    // Note: Esta es una implementación básica. Para Next.js 13+ con App Router,
+    // podrías necesitar una implementación más específica
+    return () => {};
+  }, [hasUnsavedChanges, isSubmitting]);
 
   async function handleNextStep() {
     const fieldsToValidate = steps[currentStep].fields;
@@ -99,6 +138,7 @@ export default function NewCustomerPage() {
       const result = await createFullApplication(finalData);
       
       if (result.success) {
+        setHasUnsavedChanges(false); // Marcar como guardado
         toast({ title: "✅ Éxito", description: "La aplicación ha sido creada." });
         router.push(`/customers/${result.data?.customerId}`);
       } else {
@@ -144,6 +184,7 @@ export default function NewCustomerPage() {
               <p>Paso actual: {currentStep}</p>
               <p>Formulario válido: {form.formState.isValid ? 'Sí' : 'No'}</p>
               <p>Errores: {Object.keys(form.formState.errors).length}</p>
+              <p>Cambios sin guardar: {hasUnsavedChanges ? 'Sí' : 'No'}</p>
               {Object.keys(form.formState.errors).length > 0 && (
                 <pre className="mt-2">{JSON.stringify(form.formState.errors, null, 2)}</pre>
               )}
@@ -161,7 +202,6 @@ export default function NewCustomerPage() {
                 Siguiente
               </Button>
             ) : (
-              // 👇 CAMBIO: Se modifica el botón para tener control explícito del envío
               <Button 
                 type="button" 
                 size="lg"

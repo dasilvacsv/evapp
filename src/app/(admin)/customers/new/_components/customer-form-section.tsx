@@ -1,6 +1,6 @@
 'use client';
 
-import { Control, UseFormSetValue } from "react-hook-form";
+import { Control, UseFormSetValue, useWatch } from "react-hook-form";
 import { FullApplicationFormData } from "../../schemas";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -12,14 +12,13 @@ import InputMask from "react-input-mask";
 import { useState, useEffect, useCallback } from "react";
 import { Loader2 } from 'lucide-react';
 import BirthDateFields from "./birth-date-fields";
-import FileUploader from "./file-uploader"; // Importamos el uploader
+import FileUploader from "./file-uploader";
 
 interface Props {
   formControl: Control<FullApplicationFormData>;
   setFormValue: UseFormSetValue<FullApplicationFormData>;
 }
 
-// Objeto auxiliar para convertir el nombre completo del estado a su abreviatura
 const STATE_MAP: { [key: string]: string } = {
     'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
     'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
@@ -40,7 +39,10 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
   const [isFetchingZip, setIsFetchingZip] = useState(false);
   const [zipError, setZipError] = useState('');
 
-  // --- Tu nueva función para usar OpenStreetMap (Nominatim) API ---
+  // Observar los campos que necesitan mostrar campos adicionales
+  const immigrationStatus = useWatch({ control: formControl, name: "customer.immigrationStatus" });
+  const documentType = useWatch({ control: formControl, name: "customer.documentType" });
+
   const fetchZipData = useCallback(async (zip: string) => {
     if (zip.length !== 5) return;
 
@@ -70,7 +72,7 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
 
       if (stateAbbr && county) {
         setFormValue('customer.state', stateAbbr, { shouldValidate: true });
-        setFormValue('customer.county', county, { shouldValidate: true });
+        setFormValue('customer.county', county.toUpperCase(), { shouldValidate: true });
       } else {
         throw new Error('No se pudo determinar estado/condado.');
       }
@@ -85,7 +87,6 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
     }
   }, [setFormValue]);
 
-  // useEffect con la corrección para guardar el zipCode en el estado del formulario
   useEffect(() => {
     const handler = setTimeout(() => {
         if (zipCode) {
@@ -104,7 +105,6 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                 <CardDescription>Datos personales, de contacto y financieros del cliente principal.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                {/* --- SECCIÓN DATOS PERSONALES --- */}
                 <div className="space-y-1">
                     <h3 className="font-medium text-lg">Datos Personales</h3>
                     <hr/>
@@ -112,15 +112,22 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <FormField control={formControl} name="customer.fullName" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Nombre Completo</FormLabel>
-                            <FormControl><Input placeholder="JOHN DOE" {...field} className="uppercase" /></FormControl>
+                            <FormLabel>Nombre Completo *</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="JOHN DOE" 
+                                {...field} 
+                                className="uppercase" 
+                                onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                              />
+                            </FormControl>
                             <FormMessage />
                         </FormItem>
                     )} />
                     
                     <FormField control={formControl} name="customer.birthDate" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Fecha de Nacimiento*</FormLabel>
+                            <FormLabel>Fecha de Nacimiento *</FormLabel>
                             <FormControl>
                                 <BirthDateFields
                                     value={field.value}
@@ -133,7 +140,7 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
 
                     <FormField control={formControl} name="customer.gender" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Género*</FormLabel>
+                            <FormLabel>Género</FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                                 <FormControl><SelectTrigger><SelectValue placeholder="Selecciona..." /></SelectTrigger></FormControl>
                                 <SelectContent>
@@ -147,21 +154,57 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                     )} />
                 </div>
                 
-                {/* --- SECCIÓN CONTACTO Y DIRECCIÓN --- */}
                 <div className="space-y-1 pt-4">
                     <h3 className="font-medium text-lg">Contacto y Dirección</h3>
                     <hr/>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField control={formControl} name="customer.email" render={({ field }) => (
-                        <FormItem><FormLabel>Correo Electrónico</FormLabel><FormControl><Input type="email" placeholder="ejemplo@correo.com" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem>
+                          <FormLabel>Correo Electrónico *</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="email" 
+                              placeholder="ejemplo@correo.com" 
+                              {...field} 
+                              onChange={(e) => field.onChange(e.target.value.toLowerCase())}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                     )} />
                     <FormField control={formControl} name="customer.phone" render={({ field }) => (
-                        <FormItem><FormLabel>Teléfono</FormLabel><FormControl><Input placeholder="555-123-4567" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem>
+                          <FormLabel>Teléfono</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="5551234567" 
+                              {...field}
+                              onChange={(e) => {
+                                // Solo permitir números
+                                const numericValue = e.target.value.replace(/\D/g, '');
+                                field.onChange(numericValue);
+                              }}
+                              maxLength={15}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                     )} />
                 </div>
                 <FormField control={formControl} name="customer.address" render={({ field }) => (
-                        <FormItem><FormLabel>Dirección Completa</FormLabel><FormControl><Textarea placeholder="123 MAIN ST, APT 4B..." {...field} className="uppercase" /></FormControl><FormMessage /></FormItem>
+                        <FormItem>
+                          <FormLabel>Dirección Completa</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="123 MAIN ST, APT 4B..." 
+                              {...field} 
+                              className="uppercase"
+                              onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                 )} />
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
@@ -194,7 +237,6 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                     )} />
                 </div>
 
-                {/* --- SECCIÓN INFORMACIÓN MIGRATORIA Y FINANCIERA --- */}
                 <div className="space-y-1 pt-4">
                     <h3 className="font-medium text-lg">Información Migratoria y Financiera</h3>
                     <hr/>
@@ -219,6 +261,25 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                             <FormMessage />
                         </FormItem>
                     )} />
+
+                    {/* Campo adicional cuando se selecciona "Otro" en estatus migratorio */}
+                    {immigrationStatus === 'other' && (
+                      <FormField control={formControl} name="customer.immigrationStatusOther" render={({ field }) => (
+                          <FormItem>
+                              <FormLabel>Especificar Estatus Migratorio *</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Especifique el documento..." 
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                  className="uppercase"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                          </FormItem>
+                      )} />
+                    )}
+
                     <FormField control={formControl} name="customer.documentType" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Tipo de Documento</FormLabel>
@@ -242,18 +303,44 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
                             <FormMessage />
                         </FormItem>
                     )} />
+
+                    {/* Campo adicional cuando se selecciona "Otro" en tipo de documento */}
+                    {documentType === 'other' && (
+                      <FormField control={formControl} name="customer.documentTypeOther" render={({ field }) => (
+                          <FormItem>
+                              <FormLabel>Especificar Tipo de Documento *</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Especifique el documento..." 
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                  className="uppercase"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                          </FormItem>
+                      )} />
+                    )}
+
                     <FormField control={formControl} name="customer.ssn" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Seguro Social (SSN)</FormLabel>
                             <FormControl>
-                                {/* @ts-ignore */}
-                                <InputMask mask="999-99-9999" value={field.value || ''} onChange={field.onChange}>
-                                    {(inputProps: any) => <Input {...inputProps} placeholder="000-00-0000" />}
-                                </InputMask>
+                                <Input 
+                                  placeholder="000000000"
+                                  {...field}
+                                  onChange={(e) => {
+                                    // Solo permitir números, máximo 9 dígitos
+                                    const numericValue = e.target.value.replace(/\D/g, '').substring(0, 9);
+                                    field.onChange(numericValue);
+                                  }}
+                                  maxLength={9}
+                                />
                             </FormControl>
                             <FormMessage />
                         </FormItem>
                     )} />
+
                     <FormField control={formControl} name="customer.taxType" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Tipo de Impuestos (Taxes)</FormLabel>
@@ -305,7 +392,6 @@ export default function CustomerFormSection({ formControl, setFormValue }: Props
             </CardContent>
         </Card>
 
-        {/* --- SECCIÓN DE DOCUMENTOS GENERALES --- */}
         <Card>
             <CardHeader>
                 <CardTitle>Documentos Generales del Titular</CardTitle>

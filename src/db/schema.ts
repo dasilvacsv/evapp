@@ -18,7 +18,6 @@ import { AdapterAccount } from "next-auth/adapters";
 
 // --- ENUMS ---
 
-// ENUMS ORIGINALES (con roles extendidos)
 export const userRoleEnum = pgEnum("user_role", [
   "super_admin",
   "manager",
@@ -38,15 +37,15 @@ export const commissionStatusEnum = pgEnum("commission_status", [
 
 export const batchStatusEnum = pgEnum("batch_status", ["pending_approval", "approved", "paid"]);
 
-// ENUMS ACTUALIZADOS Y NUEVOS BASADOS EN EL FORMULARIO DETALLADO
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 
 export const immigrationStatusEnum = pgEnum("immigration_status", [
   "citizen", "green_card", "work_permit_ssn", "u_visa", "political_asylum", "parole", "notice_of_action", "other",
 ]);
 
+// ACTUALIZADO: Documentos válidos para el mercado de salud
 export const documentTypeEnum = pgEnum("document_type", [
-  "foreign_passport", "drivers_license", "credentials", "work_permit_ssn_card", "ssn_card", "work_student_visa_holder", "permanent_residence", "voter_registration", "citizen_passport", "marriage_certificate",
+  "foreign_passport", "drivers_license", "state_id", "work_permit_ssn_card", "permanent_residence", "citizen_passport", "birth_certificate", "naturalization_certificate", "employment_authorization", "income_proof", "tax_return", "other",
 ]);
 
 export const taxDeclarationTypeEnum = pgEnum("tax_declaration_type", ["w2", "1099", "not_yet_declared"]);
@@ -57,13 +56,11 @@ export const claimStatusEnum = pgEnum("claim_status", ["submitted", "in_review",
 
 // --- TABLAS ---
 
-// TABLAS ORIGINALES (MODIFICADAS Y CONSERVADAS)
-
 export const appointments = pgTable("appointments", {
     id: uuid("id").primaryKey().defaultRandom(),
     policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
     customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }), // Agente con el que es la cita
+    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }),
     appointmentDate: timestamp("appointment_date").notNull(),
     notes: text("notes"),
     status: appointmentStatusEnum("status").notNull().default("scheduled"),
@@ -75,7 +72,7 @@ export const claims = pgTable("claims", {
     id: uuid("id").primaryKey().defaultRandom(),
     policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
     customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    claimNumber: varchar("claim_number", { length: 100 }), // Número de reclamo de la aseguradora
+    claimNumber: varchar("claim_number", { length: 100 }),
     description: text("description").notNull(),
     dateFiled: date("date_filed").notNull(),
     status: claimStatusEnum("status").notNull().default("submitted"),
@@ -119,15 +116,15 @@ export const customers = pgTable("customers", {
   birthDate: date("birth_date").notNull(),
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
-  // MODIFICADO: SSN ahora es un varchar de 9 para almacenar solo los dígitos
   ssn: varchar("ssn", { length: 9 }),
   
-  // --- 👇 CAMPOS AÑADIDOS/MODIFICADOS DEL FORMULARIO DETALLADO ---
   appliesToCoverage: boolean("applies_to_coverage"),
   immigrationStatus: immigrationStatusEnum("immigration_status"),
+  // NUEVO: Campos adicionales para "Otro"
+  immigrationStatusOther: text("immigration_status_other"),
   documentType: documentTypeEnum("document_type"),
+  documentTypeOther: text("document_type_other"),
   address: text("address"),
-  // NUEVO: Campo para el código postal
   zipCode: varchar("zip_code", { length: 10 }),
   county: varchar("county", { length: 100 }),
   state: varchar("state", { length: 100 }),
@@ -147,10 +144,7 @@ export const policies = pgTable("policies", {
   insuranceCompany: varchar("insurance_company", { length: 100 }),
   monthlyPremium: decimal("monthly_premium", { precision: 10, scale: 2 }),
   
-   // --- 👇 CAMPOS AÑADIDOS/MODIFICADOS DEL FORMULARIO DETALLADO ---
-  // MODIFICADO: Renombrado de policyNumber a marketplaceId
   marketplaceId: varchar("marketplace_id", { length: 100 }),
-  // NUEVO: Campo para el nombre del plan
   planName: varchar("plan_name", { length: 255 }),
   effectiveDate: date("effective_date"),
   planLink: text("plan_link"),
@@ -158,16 +152,12 @@ export const policies = pgTable("policies", {
   aorLink: text("aor_link"),
   notes: text("notes"),
 
-  // --- CAMPOS ORIGINALES CONSERVADOS ---
   assignedProcessorId: uuid("assigned_processor_id").references(() => users.id, { onDelete: "set null" }),
   commissionStatus: commissionStatusEnum("commission_status").default("pending"),
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-
-
-// --- TABLAS ORIGINALES CONSERVADAS SIN CAMBIOS ---
 
 export const processorManagerAssignments = pgTable("processor_manager_assignments", {
   processorId: uuid("processor_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -195,9 +185,6 @@ export const commissionRecords = pgTable("commission_records", {
   paymentBatchId: uuid("payment_batch_id").references(() => commissionBatches.id, { onDelete: "cascade" }),
 });
 
-
-// --- 👇 NUEVAS TABLAS PARA EL FORMULARIO DETALLADO ---
-
 export const dependents = pgTable("dependents", {
     id: uuid("id").primaryKey().defaultRandom(),
     customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
@@ -205,52 +192,40 @@ export const dependents = pgTable("dependents", {
     relationship: varchar("relationship", { length: 100 }),
     birthDate: date("birth_date"),
     immigrationStatus: immigrationStatusEnum("immigration_status"),
+    // NUEVO: Campo adicional para "Otro" en dependientes
+    immigrationStatusOther: text("immigration_status_other"),
     appliesToPolicy: boolean("applies_to_policy").default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-/**
- * ⚠️ ADVERTENCIA DE SEGURIDAD IMPORTANTE ⚠️
- * Almacenar información de pago (tarjetas, cuentas bancarias) es extremadamente riesgoso y te hace responsable del cumplimiento de normativas estrictas como PCI DSS.
- * La forma CORRECTA y SEGURA es usar un proveedor de pagos externo como Stripe, Braintree o Paddle.
- * Ellos procesan y guardan la información sensible en su bóveda segura y te devuelven un "token" no sensible (ej: `cus_xxxxxxxx` o `pm_xxxxxxxx`).
- * Esta tabla está diseñada para almacenar ESE TOKEN, no los datos reales. NUNCA guardes números de tarjeta completos, CVV o números de cuenta/ruta en tu base de datos.
- */
 export const paymentMethods = pgTable("payment_methods", {
     id: uuid("id").primaryKey().defaultRandom(),
     policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
     methodType: paymentMethodTypeEnum("method_type").notNull(),
-    
-    // --- Campo para el token del proveedor de pagos (LA FORMA SEGURA) ---
-    provider: varchar("provider", { length: 50 }), // ej: "stripe", "braintree"
-    providerToken: text("provider_token").notNull().unique(), // El token seguro que representa la información de pago
-
-    // --- Campos para mostrar al usuario (información no sensible) ---
-    cardBrand: varchar("card_brand", { length: 50 }), // ej: "Visa", "Mastercard"
-    cardLast4: varchar("card_last_4", { length: 4 }), // ej: "4242"
-    cardExpiration: varchar("card_expiration", { length: 7 }), // ej: "12/2030"
+    provider: varchar("provider", { length: 50 }),
+    providerToken: text("provider_token").notNull().unique(),
+    cardBrand: varchar("card_brand", { length: 50 }),
+    cardLast4: varchar("card_last_4", { length: 4 }),
+    cardExpiration: varchar("card_expiration", { length: 7 }),
     bankName: varchar("bank_name", { length: 100 }),
     accountLast4: varchar("account_last_4", { length: 4 }),
-    
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const documents = pgTable("documents", {
     id: uuid("id").primaryKey().defaultRandom(),
     customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    policyId: uuid("policy_id").references(() => policies.id, { onDelete: "set null" }), // Puede estar asociado a una póliza específica
-    s3Key: text("s3_key").notNull().unique(), // La ruta del archivo en S3
-    // NUEVO: Clave foránea opcional para asociar un documento a un dependiente específico
-  dependentId: uuid("dependent_id").references(() => dependents.id, { onDelete: "set null" }),
+    policyId: uuid("policy_id").references(() => policies.id, { onDelete: "set null" }),
+    s3Key: text("s3_key").notNull().unique(),
+    dependentId: uuid("dependent_id").references(() => dependents.id, { onDelete: "set null" }),
     fileName: varchar("file_name", { length: 255 }).notNull(),
     fileType: varchar("file_type", { length: 100 }).notNull(),
-    fileSize: integer("file_size").notNull(), // En bytes
+    fileSize: integer("file_size").notNull(),
     uploadedByUserId: uuid("uploaded_by_user_id").notNull().references(() => users.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-
-// --- RELACIONES (UNIFICADAS) ---
+// --- RELACIONES ---
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   manager: one(users, { fields: [users.managerId], references: [users.id], relationName: "manager_to_agents" }),
@@ -260,7 +235,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   processorAssignments: many(processorManagerAssignments, { relationName: 'processor_assignments' }),
   managerAssignments: many(processorManagerAssignments, { relationName: 'manager_assignments' }),
   accounts: many(accounts),
-  // 👇 Nuevas relaciones
   uploadedDocuments: many(documents),
 }));
 
@@ -271,7 +245,6 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 export const customersRelations = relations(customers, ({ one, many }) => ({
   createdByAgent: one(users, { fields: [customers.createdByAgentId], references: [users.id] }),
   policies: many(policies),
-  // 👇 Nuevas relaciones
   dependents: many(dependents),
   documents: many(documents),
 }));
@@ -282,12 +255,10 @@ export const policiesRelations = relations(policies, ({ one, many }) => ({
     commissionRecords: many(commissionRecords),
     paymentMethod: one(paymentMethods),
     documents: many(documents),
-    // +++ NUEVAS RELACIONES PARA POST-VENTA +++
     appointments: many(appointments),
     claims: many(claims),
 }));
 
-// Relaciones originales conservadas
 export const processorManagerAssignmentsRelations = relations(processorManagerAssignments, ({ one }) => ({
   processor: one(users, { fields: [processorManagerAssignments.processorId], references: [users.id], relationName: 'processor_assignments' }),
   manager: one(users, { fields: [processorManagerAssignments.managerId], references: [users.id], relationName: 'manager_assignments' }),
@@ -306,10 +277,8 @@ export const commissionRecordsRelations = relations(commissionRecords, ({ one })
   batch: one(commissionBatches, { fields: [commissionRecords.paymentBatchId], references: [commissionBatches.id] }),
 }));
 
-// 👇 Relaciones para las nuevas tablas
 export const dependentsRelations = relations(dependents, ({ one, many }) => ({
   customer: one(customers, { fields: [dependents.customerId], references: [customers.id] }),
-  // NUEVO: Relación para que un dependiente pueda tener muchos documentos
   documents: many(documents),
 }));
 
@@ -321,7 +290,6 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   customer: one(customers, { fields: [documents.customerId], references: [customers.id] }),
   policy: one(policies, { fields: [documents.policyId], references: [policies.id] }),
   uploadedByUser: one(users, { fields: [documents.uploadedByUserId], references: [users.id] }),
-  // NUEVO: Relación inversa para el documento
   dependent: one(dependents, { fields: [documents.dependentId], references: [dependents.id] }),
 }));
 

@@ -1,17 +1,10 @@
 'use client';
 
-// Imports de React y react-hook-form
 import { useEffect, useState } from "react";
 import { Control, useWatch } from "react-hook-form";
 import { FullApplicationFormData } from "../../schemas";
-
-// Hook para la sesión de usuario
 import { useSession } from "next-auth/react";
-
-// Datos de las aseguradoras por estado
 import { CARRIERS_BY_STATE } from "../../lib/carriers-data";
-
-// Componentes de la UI de shadcn/ui
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -28,33 +21,23 @@ export default function PolicyFormSection({ formControl }: Props) {
     const { data: session, status } = useSession();
     const [availableCarriers, setAvailableCarriers] = useState<string[]>([]);
 
-    // `useWatch` observa el campo 'customer.state' del formulario.
-    // Cada vez que ese campo cambie, este componente se volverá a renderizar.
     const selectedState = useWatch({
         control: formControl,
         name: "customer.state",
     });
 
-    // `useEffect` se ejecuta cada vez que el valor de 'selectedState' cambia.
     useEffect(() => {
         if (selectedState && CARRIERS_BY_STATE[selectedState]) {
-            // Si hay un estado seleccionado y existe en nuestros datos, actualizamos la lista de aseguradoras.
             setAvailableCarriers(CARRIERS_BY_STATE[selectedState]);
         } else {
-            // Si no hay estado o no se encuentra, la lista se vacía.
             setAvailableCarriers([]);
         }
-        // Nota: Considera resetear el valor de la aseguradora si el estado cambia para evitar inconsistencias.
-        // formControl.setValue('policy.insuranceCompany', '');
-    }, [selectedState, formControl]); // Se ejecuta cuando 'selectedState' o 'formControl' cambian.
+    }, [selectedState, formControl]);
 
     const userRole = session?.user?.role;
     const isLoadingSession = status === 'loading';
-
-    // La lógica de negocio para roles se mantiene igual.
     const canEditSensitiveFields = userRole === 'processor';
 
-    // UI de carga mientras se obtiene la sesión del usuario.
     if (isLoadingSession) {
         return (
             <Card>
@@ -83,19 +66,16 @@ export default function PolicyFormSection({ formControl }: Props) {
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                {/* --- Detalles Principales de la Póliza --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {/* CAMBIO: El campo de Aseguradora ahora es un Select dinámico */}
                     <FormField
                         control={formControl}
                         name="policy.insuranceCompany"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Aseguradora</FormLabel>
+                                <FormLabel>Aseguradora *</FormLabel>
                                 <Select
                                     onValueChange={field.onChange}
                                     defaultValue={field.value}
-                                    // Se deshabilita si no hay un estado seleccionado.
                                     disabled={availableCarriers.length === 0}
                                 >
                                     <FormControl>
@@ -130,8 +110,15 @@ export default function PolicyFormSection({ formControl }: Props) {
                         name="policy.planName"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Nombre del Plan*</FormLabel>
-                                <FormControl><Input placeholder="Ambetter Superior Silver" {...field} className="uppercase" /></FormControl>
+                                <FormLabel>Nombre del Plan *</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    placeholder="AMBETTER SUPERIOR SILVER" 
+                                    {...field} 
+                                    className="uppercase"
+                                    onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                  />
+                                </FormControl>
                                 <FormMessage />
                             </FormItem>
                         )}
@@ -157,9 +144,9 @@ export default function PolicyFormSection({ formControl }: Props) {
                     name="policy.effectiveDate"
                     render={({ field }) => (
                         <FormItem className="flex flex-col pt-2">
-                            <FormLabel className="mb-1">Fecha Efectiva*</FormLabel>
+                            <FormLabel className="mb-1">Fecha Efectiva * (MM/DD/AAAA)</FormLabel>
                             <FormControl>
-                                <FormDateInput field={field} disabled={!canEditSensitiveFields} />
+                                <FormDateInput field={field} />
                             </FormControl>
                             {!canEditSensitiveFields && <p className="text-xs text-muted-foreground pt-1">Solo editable por Procesamiento.</p>}
                             <FormMessage />
@@ -167,14 +154,13 @@ export default function PolicyFormSection({ formControl }: Props) {
                     )}
                 />
                 
-                {/* --- Detalles Financieros --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField
                         control={formControl}
                         name="policy.monthlyPremium"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Prima Mensual ($)*</FormLabel>
+                                <FormLabel>Prima Mensual ($) *</FormLabel>
                                 <FormControl>
                                     <Input
                                         type="number"
@@ -217,7 +203,6 @@ export default function PolicyFormSection({ formControl }: Props) {
                     />
                 </div>
 
-                {/* --- Enlaces y Notas --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField
                         control={formControl}
@@ -248,7 +233,14 @@ export default function PolicyFormSection({ formControl }: Props) {
                     render={({ field }) => (
                         <FormItem>
                             <FormLabel>Comentarios Adicionales</FormLabel>
-                            <FormControl><Textarea placeholder="Añade cualquier nota relevante sobre la venta, el cliente o la póliza..." {...field} className="uppercase" /></FormControl>
+                            <FormControl>
+                              <Textarea 
+                                placeholder="AÑADE CUALQUIER NOTA RELEVANTE SOBRE LA VENTA..." 
+                                {...field} 
+                                className="uppercase"
+                                onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                              />
+                            </FormControl>
                             <FormMessage />
                         </FormItem>
                     )}

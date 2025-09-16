@@ -1,17 +1,33 @@
 // (admin)/customers/schemas.ts
 import { z } from 'zod';
 
-// Schema para el cliente - CON VALIDACIONES MEJORADAS
+// Schema para el cliente - CON VALIDACIONES MEJORADAS Y ACTUALIZADAS
 const customerSchema = z.object({
-  fullName: z.string().min(1, "El nombre completo es requerido").max(255, "El nombre es demasiado largo"),
+  fullName: z.string()
+    .min(1, "El nombre completo es requerido")
+    .max(255, "El nombre es demasiado largo")
+    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
   gender: z.enum(['male', 'female', 'other']).optional(),
   birthDate: z.date({ required_error: "La fecha de nacimiento es requerida" }),
-  email: z.string().email("Email inválido").optional().or(z.literal("")),
-  phone: z.string().optional(),
-  ssn: z.string()
-    .transform(val => val.replace(/\D/g, '')) // Elimina no-dígitos
-    .pipe(z.string().length(9, "El SSN debe tener 9 dígitos"))
+  // ACTUALIZADO: Email ahora es OBLIGATORIO
+  email: z.string()
+    .min(1, "El correo electrónico es requerido")
+    .email("Formato de correo electrónico inválido")
+    .transform(val => val.toLowerCase().trim()),
+  // ACTUALIZADO: Validación mejorada para teléfono (solo números)
+  phone: z.string()
     .optional()
+    .refine((val) => !val || /^\d{10,15}$/.test(val.replace(/\D/g, '')), {
+      message: "El teléfono debe contener solo números (10-15 dígitos)"
+    })
+    .transform(val => val ? val.replace(/\D/g, '') : val),
+  // ACTUALIZADO: SSN con validación estricta de 9 dígitos
+  ssn: z.string()
+    .optional()
+    .transform(val => val ? val.replace(/\D/g, '') : '')
+    .pipe(z.string().refine((val) => !val || val.length === 9, {
+      message: "El SSN debe tener exactamente 9 dígitos"
+    }))
     .or(z.literal("")),
   appliesToCoverage: z.boolean().default(true),
   zipCode: z.string().optional(),
@@ -19,35 +35,61 @@ const customerSchema = z.object({
     'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
     'political_asylum', 'parole', 'notice_of_action', 'other'
   ]).optional(),
+  // NUEVO: Campo adicional para "Otro" en estatus migratorio
+  immigrationStatusOther: z.string().optional(),
   documentType: z.enum([
     'foreign_passport', 'drivers_license', 'credentials', 
     'work_permit_ssn_card', 'ssn_card', 'work_student_visa_holder', 
     'permanent_residence', 'voter_registration', 'citizen_passport', 
     'marriage_certificate', 'income_proof', 'other'
   ]).optional(),
-  address: z.string().optional(),
-  county: z.string().optional(),
+  // NUEVO: Campo adicional para "Otro" en tipo de documento
+  documentTypeOther: z.string().optional(),
+  address: z.string()
+    .optional()
+    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
+  county: z.string()
+    .optional()
+    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
   state: z.string().optional(),
   taxType: z.enum(['w2', '1099', 'not_yet_declared']).optional(),
   income: z.number().positive("Los ingresos deben ser mayor a 0").optional(),
   declaresOtherPeople: z.boolean().default(false),
+}).refine((data) => {
+  // Validación condicional: Si immigration status es "other", debe especificar
+  if (data.immigrationStatus === 'other') {
+    return data.immigrationStatusOther && data.immigrationStatusOther.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Debe especificar el estatus migratorio cuando selecciona 'Otro'",
+  path: ["immigrationStatusOther"]
+}).refine((data) => {
+  // Validación condicional: Si document type es "other", debe especificar
+  if (data.documentType === 'other') {
+    return data.documentTypeOther && data.documentTypeOther.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Debe especificar el tipo de documento cuando selecciona 'Otro'",
+  path: ["documentTypeOther"]
 });
-
-
 
 // Schema para la póliza - CON VALIDACIONES MEJORADAS
 const policySchema = z.object({
   insuranceCompany: z.string().min(1, "La aseguradora es requerida").max(100, "El nombre de la aseguradora es demasiado largo"),
-  // MODIFICADO: Renombrado
   marketplaceId: z.string().optional(),
-  // NUEVO: Nombre del plan
-  planName: z.string().min(1, "El nombre del plan es requerido."),
+  planName: z.string()
+    .min(1, "El nombre del plan es requerido.")
+    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
   monthlyPremium: z.number().positive("La prima debe ser mayor a 0").optional(),
   effectiveDate: z.date().optional(),
   planLink: z.string().url("Debe ser una URL válida").optional().or(z.literal("")),
   taxCredit: z.number().positive("El crédito fiscal debe ser mayor a 0").optional(),
   aorLink: z.string().url("Debe ser una URL válida").optional().or(z.literal("")),
-  notes: z.string().optional(),
+  notes: z.string()
+    .optional()
+    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
 });
 
 // Schema para documentos - CON VALIDACIONES MEJORADAS
@@ -56,40 +98,60 @@ const documentSchema = z.object({
   fileName: z.string().min(1, "El nombre del archivo es requerido"),
   fileType: z.string().min(1, "El tipo de archivo es requerido"),
   fileSize: z.number().min(1, "El tamaño del archivo debe ser mayor a 0"),
-  // NUEVO: ID opcional del dependiente al que pertenece
   dependentId: z.string().optional(),
 });
 
 // Schema para dependientes - CON VALIDACIONES MEJORADAS
 const dependentSchema = z.object({
-  fullName: z.string().min(1, "El nombre del dependiente es requerido").max(255, "El nombre es demasiado largo"),
-  relationship: z.string().min(1, "La relación es requerida"),
+  fullName: z.string()
+    .min(1, "El nombre del dependiente es requerido")
+    .max(255, "El nombre es demasiado largo")
+    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
+  relationship: z.string()
+    .min(1, "La relación es requerida")
+    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
   birthDate: z.date().optional(),
   immigrationStatus: z.enum([
     'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
     'political_asylum', 'parole', 'notice_of_action', 'other'
   ]).optional(),
+  // NUEVO: Campo adicional para "Otro" en estatus migratorio de dependientes
+  immigrationStatusOther: z.string().optional(),
   appliesToPolicy: z.boolean().default(true),
   documents: z.array(documentSchema).default([]),
-  
+}).refine((data) => {
+  // Validación condicional para dependientes
+  if (data.immigrationStatus === 'other') {
+    return data.immigrationStatusOther && data.immigrationStatusOther.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Debe especificar el estatus migratorio cuando selecciona 'Otro'",
+  path: ["immigrationStatusOther"]
 });
 
 // Schema para método de pago - CON VALIDACIONES CONDICIONALES MEJORADAS
 const paymentSchema = z.object({
   methodType: z.enum(['debit_card', 'credit_card', 'bank_account']).optional(),
   cardHolderName: z.string().optional(),
-  cardNumber: z.string().optional(),
+  cardNumber: z.string()
+    .optional()
+    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
   expirationDate: z.string().optional(),
-  cvv: z.string().optional(),
+  cvv: z.string()
+    .optional()
+    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
   bankName: z.string().optional(),
-  routingNumber: z.string().optional(),
-  accountNumber: z.string().optional(),
+  routingNumber: z.string()
+    .optional()
+    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
+  accountNumber: z.string()
+    .optional()
+    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
 }).refine((data) => {
-  // Validaciones condicionales para tarjetas
   if (data.methodType === 'credit_card' || data.methodType === 'debit_card') {
     return data.cardHolderName && data.cardNumber && data.expirationDate;
   }
-  // Validaciones condicionales para cuenta bancaria
   if (data.methodType === 'bank_account') {
     return data.bankName && data.routingNumber && data.accountNumber;
   }
@@ -106,7 +168,6 @@ export const createFullApplicationSchema = z.object({
   documents: z.array(documentSchema).default([]),
   payment: paymentSchema.optional(),
 }).refine((data) => {
-  // Validación adicional: si hay dependientes, deben tener nombres únicos
   const dependentNames = data.dependents.map(d => d.fullName.toLowerCase().trim());
   const uniqueNames = new Set(dependentNames);
   return uniqueNames.size === dependentNames.length;
@@ -114,8 +175,6 @@ export const createFullApplicationSchema = z.object({
   message: "Los dependientes no pueden tener nombres duplicados",
   path: ["dependents"]
 });
-
-
 
 export const createAppointmentSchema = z.object({
   customerId: z.string().uuid("Debes seleccionar un cliente."),

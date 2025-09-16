@@ -43,6 +43,13 @@
       "when": 1757690675597,
       "tag": "0005_colorful_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1758058254140,
+      "tag": "0006_even_nekra",
+      "breakpoints": true
     }
   ]
 }

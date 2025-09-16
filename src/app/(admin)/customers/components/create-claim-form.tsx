@@ -1,78 +1,64 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { createClaimSchema } from '../schemas';
 import { createClaim, getCustomersForSelection } from '../actions';
+import { Button } from '@/components/ui/button';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { CalendarIcon, Loader2 } from 'lucide-react';
+import { format } from 'date-fns';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
-
-const formSchema = z.object({
-  customerId: z.string().nonempty('Selecciona un cliente.'),
-  policyId: z.string().nonempty('Selecciona una póliza.'),
-  claimNumber: z.string().nonempty('El número de reclamo es obligatorio.'),
-  dateFiled: z.date({
-    required_error: 'La fecha del reclamo es obligatoria.',
-  }),
-  description: z.string().nonempty('La descripción es obligatoria.'),
-});
-
-type FormData = z.infer<typeof formSchema>;
 
 interface Props {
   onClose: () => void;
 }
 
 export function CreateClaimForm({ onClose }: Props) {
-  const [customers, setCustomers] = useState<{ id: string; fullName: string; policies: { id: string; planName: string; insuranceCompany: string }[] }[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
 
-  const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+  const form = useForm({
+    resolver: zodResolver(createClaimSchema),
+    defaultValues: {
+      customerId: '',
+      policyId: '',
+      dateFiled: undefined,
+      claimNumber: '',
+      description: '',
+    },
   });
 
   useEffect(() => {
-    async function fetchCustomers() {
-      const data = await getCustomersForSelection();
+    getCustomersForSelection().then((data) => {
       setCustomers(data);
-    }
-    fetchCustomers();
+      setIsLoadingCustomers(false);
+    });
   }, []);
 
-  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+  const selectedCustomerData = customers.find(c => c.id === selectedCustomer);
 
-  async function onSubmit(data: FormData) {
-    startTransition(async () => {
+  async function onSubmit(data: any) {
+    setIsLoading(true);
+    try {
       const result = await createClaim(data);
       if (result.success) {
         onClose();
       } else {
         console.error(result.message);
       }
-    });
+    } catch (error) {
+      console.error('Error creating claim:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -84,18 +70,22 @@ export function CreateClaimForm({ onClose }: Props) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Cliente</FormLabel>
-              <Select onValueChange={(value) => {
-                field.onChange(value);
-                setSelectedCustomerId(value);
-                form.setValue('policyId', '');
-              }} defaultValue={field.value}>
+              <Select 
+                onValueChange={(value) => {
+                  field.onChange(value);
+                  setSelectedCustomer(value);
+                  form.setValue('policyId', '');
+                }} 
+                defaultValue={field.value}
+                disabled={isLoadingCustomers}
+              >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un cliente..." />
+                    <SelectValue placeholder={isLoadingCustomers ? "Cargando clientes..." : "Selecciona un cliente"} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {customers.map(customer => (
+                  {customers.map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
                       {customer.fullName}
                     </SelectItem>
@@ -106,22 +96,23 @@ export function CreateClaimForm({ onClose }: Props) {
             </FormItem>
           )}
         />
+
         <FormField
           control={form.control}
           name="policyId"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Póliza</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
+              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedCustomer}>
                 <FormControl>
-                  <SelectTrigger disabled={!selectedCustomerId}>
-                    <SelectValue placeholder="Selecciona una póliza..." />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona una póliza" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {selectedCustomer?.policies.map(policy => (
+                  {selectedCustomerData?.policies?.map((policy) => (
                     <SelectItem key={policy.id} value={policy.id}>
-                      {policy.planName} ({policy.insuranceCompany})
+                      {policy.planName} - {policy.insuranceCompany}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -130,19 +121,7 @@ export function CreateClaimForm({ onClose }: Props) {
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="claimNumber"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Número de Reclamo</FormLabel>
-              <FormControl>
-                <Input placeholder="Ej: A123456789" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+
         <FormField
           control={form.control}
           name="dateFiled"
@@ -153,16 +132,13 @@ export function CreateClaimForm({ onClose }: Props) {
                 <PopoverTrigger asChild>
                   <FormControl>
                     <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-full pl-3 text-left font-normal",
-                        !field.value && "text-muted-foreground"
-                      )}
+                      variant="outline"
+                      className="w-full pl-3 text-left font-normal"
                     >
                       {field.value ? (
                         format(field.value, "PPP")
                       ) : (
-                        <span>Selecciona una fecha</span>
+                        <span>Selecciona la fecha del reclamo</span>
                       )}
                       <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                     </Button>
@@ -173,6 +149,7 @@ export function CreateClaimForm({ onClose }: Props) {
                     mode="single"
                     selected={field.value}
                     onSelect={field.onChange}
+                    disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
                     initialFocus
                   />
                 </PopoverContent>
@@ -181,23 +158,48 @@ export function CreateClaimForm({ onClose }: Props) {
             </FormItem>
           )}
         />
+
         <FormField
           control={form.control}
-          name="description"
+          name="claimNumber"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Descripción</FormLabel>
+              <FormLabel>Número de Reclamo (Opcional)</FormLabel>
               <FormControl>
-                <Textarea placeholder="Describe brevemente el reclamo..." {...field} />
+                <Input placeholder="CLM-2024-001234" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Registrar Reclamo
-        </Button>
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Descripción del Reclamo</FormLabel>
+              <FormControl>
+                <Textarea 
+                  placeholder="Describe detalladamente el reclamo, incluyendo qué pasó, cuándo ocurrió, y cualquier información relevante..." 
+                  {...field}
+                  className="min-h-[100px]"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Registrar Reclamo
+          </Button>
+        </div>
       </form>
     </Form>
   );

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { isValid, parse } from "date-fns";
+import { isValid } from "date-fns";
 
 interface BirthDateFieldsProps {
   value?: Date;
@@ -18,8 +18,9 @@ const months = [
 ];
 
 export default function BirthDateFields({ value, onChange }: BirthDateFieldsProps) {
-  const [day, setDay] = useState(() => value ? String(value.getUTCDate()) : '');
+  // Formato MM/DD/AAAA
   const [month, setMonth] = useState(() => value ? String(value.getUTCMonth()) : '');
+  const [day, setDay] = useState(() => value ? String(value.getUTCDate()) : '');
   const [year, setYear] = useState(() => value ? String(value.getUTCFullYear()) : '');
 
   useEffect(() => {
@@ -30,8 +31,10 @@ export default function BirthDateFields({ value, onChange }: BirthDateFieldsProp
       
       const potentialDate = new Date(Date.UTC(yearInt, monthInt, dayInt));
       
-      // Validamos que la fecha construida es válida y corresponde a los inputs
-      if (isValid(potentialDate) && potentialDate.getUTCFullYear() === yearInt && potentialDate.getUTCMonth() === monthInt && potentialDate.getUTCDate() === dayInt) {
+      if (isValid(potentialDate) && 
+          potentialDate.getUTCFullYear() === yearInt && 
+          potentialDate.getUTCMonth() === monthInt && 
+          potentialDate.getUTCDate() === dayInt) {
         onChange(potentialDate);
       } else {
         onChange(undefined);
