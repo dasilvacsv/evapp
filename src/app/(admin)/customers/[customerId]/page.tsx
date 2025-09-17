@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCustomerDetails, getDocumentUrl } from '../actions';
+import { getCustomerDetails, getDocumentUrl, sendToProcessing } from '../actions';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 
@@ -14,10 +14,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // Icons & Utils
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { ArrowLeft, User, Users, FileText, FolderOpen, Briefcase, Landmark, Wallet, Mail, Phone, MapPin, Calendar, Clock, Paperclip, Loader2, CalendarCheck, ShieldAlert, CreditCard } from 'lucide-react';
+import { ArrowLeft, User, Users, FileText, FolderOpen, Briefcase, Landmark, Wallet, Mail, Phone, MapPin, Calendar, Clock, Paperclip, Loader2, CalendarCheck, ShieldAlert, CreditCard, CheckCircle2, Send, AlertTriangle } from 'lucide-react';
+
+// Componentes especializados
+import CustomerTasksModule from '../components/customer-tasks-module';
 
 // Tipos extraídos para usar en el cliente
 type CustomerDetails = Awaited<ReturnType<typeof getCustomerDetails>>;
@@ -84,6 +88,7 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [loadingDocId, setLoadingDocId] = useState<string | null>(null);
+  const [isSendingToProcessing, setIsSendingToProcessing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -126,6 +131,39 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
     }
   };
 
+  const handleSendToProcessing = async () => {
+    if (!window.confirm('¿Estás seguro de que quieres enviar este caso a procesamiento? Una vez enviado, perderás acceso a los detalles del cliente.')) {
+      return;
+    }
+
+    setIsSendingToProcessing(true);
+    try {
+      const result = await sendToProcessing(params.customerId);
+      if (result.success) {
+        toast({
+          title: "Caso enviado a procesamiento",
+          description: "El caso ha sido transferido al equipo de procesamiento.",
+        });
+        // Recargar la página para reflejar los cambios
+        window.location.reload();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.message,
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error inesperado",
+        description: "No se pudo enviar el caso a procesamiento.",
+      });
+    } finally {
+      setIsSendingToProcessing(false);
+    }
+  };
+
   if (isLoadingPage) {
     return <div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
@@ -134,7 +172,7 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
     return notFound();
   }
 
-  const { dependents, policies, documents: generalDocuments, ...customer } = customerDetails;
+  const { dependents, policies, documents: generalDocuments, tasks, generatedDocuments, ...customer } = customerDetails;
   const agentName = customer.createdByAgent?.name || `${customer.createdByAgent?.firstName || ''} ${customer.createdByAgent?.lastName || ''}`.trim() || 'N/A';
 
   const allAppointments = policies.flatMap(p => p.appointments);
@@ -143,18 +181,61 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
     t.id === pm.id
   )));
 
+  const isInProcessing = customer.processingStartedAt;
+
   return (
     <div className="space-y-8 p-4 md:p-8">
       {/* Encabezado */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button asChild variant="outline" size="icon" className="shrink-0"><Link href="/customers"><ArrowLeft className="h-4 w-4" /></Link></Button>
+          <Button asChild variant="outline" size="icon" className="shrink-0">
+            <Link href="/customers">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{customer.fullName}</h1>
-            <p className="text-sm text-muted-foreground">Creado por {agentName} el {formatDate(customer.createdAt)}</p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-sm text-muted-foreground">
+                Creado por {agentName} el {formatDate(customer.createdAt)}
+              </p>
+              {isInProcessing && (
+                <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                  <Clock className="mr-1 h-3 w-3" />
+                  En Procesamiento desde {formatDate(isInProcessing)}
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
+        
+        {/* Botón para enviar a procesamiento (solo si no está ya en procesamiento) */}
+        {!isInProcessing && (
+          <Button 
+            onClick={handleSendToProcessing}
+            disabled={isSendingToProcessing}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {isSendingToProcessing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Enviar a Procesamiento
+          </Button>
+        )}
       </div>
+
+      {/* Alerta de restricción de acceso */}
+      {isInProcessing && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertTriangle className="h-4 w-4 text-orange-600" />
+          <AlertDescription className="text-orange-800">
+            Este caso está actualmente en procesamiento. El acceso detallado está restringido al equipo de procesamiento.
+            Solo puedes ver información básica y gestionar tareas asignadas a ti.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-3">
         {/* COLUMNA IZQUIERDA Y CENTRAL - Información principal y de pólizas */}
@@ -188,18 +269,32 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
 
           {/* Secciones de Historial en Tabs */}
           <Tabs defaultValue="policies">
-            <TabsList className="grid w-full grid-cols-3 md:w-[400px]">
+            <TabsList className="grid w-full grid-cols-4 md:w-[500px]">
               <TabsTrigger value="policies">Pólizas</TabsTrigger>
               <TabsTrigger value="appointments">Citas</TabsTrigger>
               <TabsTrigger value="claims">Reclamos</TabsTrigger>
+              <TabsTrigger value="tasks">Tareas</TabsTrigger>
             </TabsList>
 
             <TabsContent value="policies" className="mt-6">
               <Card>
-                <CardHeader><CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5 text-primary" />Pólizas Registradas</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <FileText className="mr-2 h-5 w-5 text-primary" />
+                    Pólizas Registradas
+                  </CardTitle>
+                </CardHeader>
                 <CardContent>
                   <Table>
-                    <TableHeader><TableRow><TableHead>Aseguradora</TableHead><TableHead>Estado</TableHead><TableHead>Prima Mensual</TableHead><TableHead>Fecha Efectiva</TableHead></TableRow></TableHeader>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Aseguradora</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Prima Mensual</TableHead>
+                        <TableHead>Fecha Efectiva</TableHead>
+                        <TableHead>AOR</TableHead>
+                      </TableRow>
+                    </TableHeader>
                     <TableBody>
                       {policies.length > 0 ? policies.map(p => (
                         <TableRow key={p.id}>
@@ -207,8 +302,20 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
                           <TableCell><Badge>{p.status}</Badge></TableCell>
                           <TableCell>{p.monthlyPremium ? formatCurrency(Number(p.monthlyPremium)) : '-'}</TableCell>
                           <TableCell>{p.effectiveDate ? formatDate(p.effectiveDate) : '-'}</TableCell>
+                          <TableCell>
+                            {p.aorLink ? (
+                              <Button variant="outline" size="sm" asChild>
+                                <a href={p.aorLink} target="_blank" rel="noopener noreferrer">
+                                  <FileText className="mr-1 h-3 w-3" />
+                                  Ver AOR
+                                </a>
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">Sin AOR</span>
+                            )}
+                          </TableCell>
                         </TableRow>
-                      )) : <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-4">No hay pólizas.</TableCell></TableRow>}
+                      )) : <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-4">No hay pólizas.</TableCell></TableRow>}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -254,6 +361,14 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
                   </Table>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="tasks" className="mt-6">
+              <CustomerTasksModule
+                customerId={params.customerId}
+                policyId={policies[0]?.id}
+                tasks={tasks || []}
+              />
             </TabsContent>
           </Tabs>
         </div>
@@ -305,6 +420,57 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
               )) : <p className="text-sm text-muted-foreground text-center">No hay métodos de pago registrados.</p>}
             </CardContent>
           </Card>
+
+          {/* Documentos Generados */}
+          {generatedDocuments && generatedDocuments.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <FileText className="mr-2 h-5 w-5 text-primary" />
+                  Documentos Generados
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {generatedDocuments.map(genDoc => (
+                  <div key={genDoc.id} className="p-3 bg-muted/50 rounded-md">
+                    <p className="font-semibold text-sm">{genDoc.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Plantilla: {genDoc.template.name} | Generado por: {genDoc.generatedBy.name} | {formatDate(genDoc.createdAt)}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => {
+                        const newWindow = window.open('', '_blank');
+                        if (newWindow) {
+                          newWindow.document.write(`
+                            <html>
+                              <head>
+                                <title>${genDoc.title}</title>
+                                <style>
+                                  body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+                                  pre { white-space: pre-wrap; }
+                                </style>
+                              </head>
+                              <body>
+                                <h1>${genDoc.title}</h1>
+                                <pre>${genDoc.generatedContent}</pre>
+                              </body>
+                            </html>
+                          `);
+                          newWindow.document.close();
+                        }
+                      }}
+                    >
+                      <FileText className="mr-1 h-3 w-3" />
+                      Ver Documento
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -6,22 +6,19 @@ const customerSchema = z.object({
   fullName: z.string()
     .min(1, "El nombre completo es requerido")
     .max(255, "El nombre es demasiado largo")
-    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
+    .transform(val => val.toUpperCase().trim()),
   gender: z.enum(['male', 'female', 'other']).optional(),
   birthDate: z.date({ required_error: "La fecha de nacimiento es requerida" }),
-  // ACTUALIZADO: Email ahora es OBLIGATORIO
   email: z.string()
     .min(1, "El correo electrónico es requerido")
     .email("Formato de correo electrónico inválido")
     .transform(val => val.toLowerCase().trim()),
-  // ACTUALIZADO: Validación mejorada para teléfono (solo números)
   phone: z.string()
     .optional()
     .refine((val) => !val || /^\d{10,15}$/.test(val.replace(/\D/g, '')), {
       message: "El teléfono debe contener solo números (10-15 dígitos)"
     })
     .transform(val => val ? val.replace(/\D/g, '') : val),
-  // ACTUALIZADO: SSN con validación estricta de 9 dígitos
   ssn: z.string()
     .optional()
     .transform(val => val ? val.replace(/\D/g, '') : '')
@@ -35,7 +32,6 @@ const customerSchema = z.object({
     'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
     'political_asylum', 'parole', 'notice_of_action', 'other'
   ]).optional(),
-  // NUEVO: Campo adicional para "Otro" en estatus migratorio
   immigrationStatusOther: z.string().optional(),
   documentType: z.enum([
     'foreign_passport', 'drivers_license', 'credentials', 
@@ -43,20 +39,18 @@ const customerSchema = z.object({
     'permanent_residence', 'voter_registration', 'citizen_passport', 
     'marriage_certificate', 'income_proof', 'other'
   ]).optional(),
-  // NUEVO: Campo adicional para "Otro" en tipo de documento
   documentTypeOther: z.string().optional(),
   address: z.string()
     .optional()
-    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
+    .transform(val => val ? val.toUpperCase().trim() : val),
   county: z.string()
     .optional()
-    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
+    .transform(val => val ? val.toUpperCase().trim() : val),
   state: z.string().optional(),
   taxType: z.enum(['w2', '1099', 'not_yet_declared']).optional(),
   income: z.number().positive("Los ingresos deben ser mayor a 0").optional(),
   declaresOtherPeople: z.boolean().default(false),
 }).refine((data) => {
-  // Validación condicional: Si immigration status es "other", debe especificar
   if (data.immigrationStatus === 'other') {
     return data.immigrationStatusOther && data.immigrationStatusOther.trim().length > 0;
   }
@@ -65,7 +59,6 @@ const customerSchema = z.object({
   message: "Debe especificar el estatus migratorio cuando selecciona 'Otro'",
   path: ["immigrationStatusOther"]
 }).refine((data) => {
-  // Validación condicional: Si document type es "other", debe especificar
   if (data.documentType === 'other') {
     return data.documentTypeOther && data.documentTypeOther.trim().length > 0;
   }
@@ -81,7 +74,7 @@ const policySchema = z.object({
   marketplaceId: z.string().optional(),
   planName: z.string()
     .min(1, "El nombre del plan es requerido.")
-    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
+    .transform(val => val.toUpperCase().trim()),
   monthlyPremium: z.number().positive("La prima debe ser mayor a 0").optional(),
   effectiveDate: z.date().optional(),
   planLink: z.string().url("Debe ser una URL válida").optional().or(z.literal("")),
@@ -89,7 +82,7 @@ const policySchema = z.object({
   aorLink: z.string().url("Debe ser una URL válida").optional().or(z.literal("")),
   notes: z.string()
     .optional()
-    .transform(val => val ? val.toUpperCase().trim() : val), // AUTO-MAYÚSCULAS
+    .transform(val => val ? val.toUpperCase().trim() : val),
 });
 
 // Schema para documentos - CON VALIDACIONES MEJORADAS
@@ -106,21 +99,19 @@ const dependentSchema = z.object({
   fullName: z.string()
     .min(1, "El nombre del dependiente es requerido")
     .max(255, "El nombre es demasiado largo")
-    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
+    .transform(val => val.toUpperCase().trim()),
   relationship: z.string()
     .min(1, "La relación es requerida")
-    .transform(val => val.toUpperCase().trim()), // AUTO-MAYÚSCULAS
+    .transform(val => val.toUpperCase().trim()),
   birthDate: z.date().optional(),
   immigrationStatus: z.enum([
     'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
     'political_asylum', 'parole', 'notice_of_action', 'other'
   ]).optional(),
-  // NUEVO: Campo adicional para "Otro" en estatus migratorio de dependientes
   immigrationStatusOther: z.string().optional(),
   appliesToPolicy: z.boolean().default(true),
   documents: z.array(documentSchema).default([]),
 }).refine((data) => {
-  // Validación condicional para dependientes
   if (data.immigrationStatus === 'other') {
     return data.immigrationStatusOther && data.immigrationStatusOther.trim().length > 0;
   }
@@ -136,18 +127,18 @@ const paymentSchema = z.object({
   cardHolderName: z.string().optional(),
   cardNumber: z.string()
     .optional()
-    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
+    .transform(val => val ? val.replace(/\D/g, '') : val),
   expirationDate: z.string().optional(),
   cvv: z.string()
     .optional()
-    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
+    .transform(val => val ? val.replace(/\D/g, '') : val),
   bankName: z.string().optional(),
   routingNumber: z.string()
     .optional()
-    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
+    .transform(val => val ? val.replace(/\D/g, '') : val),
   accountNumber: z.string()
     .optional()
-    .transform(val => val ? val.replace(/\D/g, '') : val), // Solo números
+    .transform(val => val ? val.replace(/\D/g, '') : val),
 }).refine((data) => {
   if (data.methodType === 'credit_card' || data.methodType === 'debit_card') {
     return data.cardHolderName && data.cardNumber && data.expirationDate;
@@ -191,4 +182,44 @@ export const createClaimSchema = z.object({
   description: z.string().min(10, "La descripción debe tener al menos 10 caracteres.").max(1000, "La descripción no puede exceder los 1000 caracteres."),
 });
 
+// NUEVOS SCHEMAS PARA SISTEMA DE TAREAS
+
+export const createTaskSchema = z.object({
+  customerId: z.string().uuid("Debes seleccionar un cliente."),
+  policyId: z.string().uuid().optional(),
+  title: z.string().min(1, "El título es requerido.").max(255, "El título es muy largo."),
+  description: z.string().max(1000, "La descripción no puede exceder los 1000 caracteres.").optional(),
+  type: z.enum(['follow_up', 'document_request', 'birthday_reminder', 'renewal_reminder', 'address_change', 'claim_follow_up', 'payment_reminder', 'general', 'aor_signature']).default('general'),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+  assignedToId: z.string().uuid().optional(),
+  dueDate: z.date().optional(),
+});
+
+export const createPostSaleTaskSchema = z.object({
+  title: z.string().min(1, "El título es requerido.").max(255, "El título es muy largo."),
+  description: z.string().max(1000, "La descripción no puede exceder los 1000 caracteres.").optional(),
+  type: z.enum(['follow_up', 'document_request', 'birthday_reminder', 'renewal_reminder', 'address_change', 'claim_follow_up', 'payment_reminder', 'general', 'aor_signature']).default('general'),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+  assignedToId: z.string().uuid().optional(),
+  customerId: z.string().uuid().optional(),
+  policyId: z.string().uuid().optional(),
+  dueDate: z.date().optional(),
+  boardColumn: z.string().default('pending'),
+  tags: z.string().optional(), // JSON string
+});
+
+// NUEVOS SCHEMAS PARA PLANTILLAS DINÁMICAS
+
+export const createTemplateSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido.").max(255, "El nombre es muy largo."),
+  description: z.string().max(500, "La descripción no puede exceder los 500 caracteres.").optional(),
+  type: z.enum(['income_letter', 'coverage_confirmation', 'renewal_notice', 'birthday_greeting', 'address_change_confirmation', 'general_correspondence']),
+  content: z.string().min(1, "El contenido es requerido."),
+  variables: z.string().optional(), // JSON string
+  isActive: z.boolean().default(true),
+});
+
 export type FullApplicationFormData = z.infer<typeof createFullApplicationSchema>;
+export type TaskFormData = z.infer<typeof createTaskSchema>;
+export type PostSaleTaskFormData = z.infer<typeof createPostSaleTaskSchema>;
+export type TemplateFormData = z.infer<typeof createTemplateSchema>;

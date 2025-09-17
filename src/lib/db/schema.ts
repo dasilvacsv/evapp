@@ -25,6 +25,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "processor",
   "commission_analyst",
   "customer_service",
+  "call_center", // NUEVO: Rol Call Center
 ]);
 
 export const policyStatusEnum = pgEnum("policy_status", [
@@ -43,7 +44,6 @@ export const immigrationStatusEnum = pgEnum("immigration_status", [
   "citizen", "green_card", "work_permit_ssn", "u_visa", "political_asylum", "parole", "notice_of_action", "other",
 ]);
 
-// ACTUALIZADO: Documentos válidos para el mercado de salud
 export const documentTypeEnum = pgEnum("document_type", [
   "foreign_passport", "drivers_license", "state_id", "work_permit_ssn_card", "permanent_residence", "citizen_passport", "birth_certificate", "naturalization_certificate", "employment_authorization", "income_proof", "tax_return", "other",
 ]);
@@ -54,7 +54,24 @@ export const paymentMethodTypeEnum = pgEnum("payment_method_type", ["debit_card"
 export const appointmentStatusEnum = pgEnum("appointment_status", ["scheduled", "completed", "cancelled", "rescheduled"]);
 export const claimStatusEnum = pgEnum("claim_status", ["submitted", "in_review", "information_requested", "approved", "denied"]);
 
-// --- TABLAS ---
+// NUEVOS ENUMS PARA TAREAS Y PLANTILLAS
+export const taskStatusEnum = pgEnum("task_status", [
+  "pending", "in_progress", "completed", "cancelled", "on_hold"
+]);
+
+export const taskPriorityEnum = pgEnum("task_priority", [
+  "low", "medium", "high", "urgent"
+]);
+
+export const taskTypeEnum = pgEnum("task_type", [
+  "follow_up", "document_request", "birthday_reminder", "renewal_reminder", "address_change", "claim_follow_up", "payment_reminder", "general", "aor_signature"
+]);
+
+export const templateTypeEnum = pgEnum("template_type", [
+  "income_letter", "coverage_confirmation", "renewal_notice", "birthday_greeting", "address_change_confirmation", "general_correspondence"
+]);
+
+// --- TABLAS EXISTENTES ---
 
 export const appointments = pgTable("appointments", {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -91,7 +108,9 @@ export const users = pgTable("users", {
   image: text("image"),
   role: userRoleEnum("role").notNull().default('agent'),
   managerId: uuid("manager_id").references((): any => users.id, { onDelete: "set null" }),
+  assignedAgentId: uuid("assigned_agent_id").references((): any => users.id, { onDelete: "set null" }), // NUEVO: Para Call Center
   isActive: boolean("is_active").default(true).notNull(),
+  canDownload: boolean("can_download").default(true).notNull(), // NUEVO: Permiso de descarga
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -120,7 +139,6 @@ export const customers = pgTable("customers", {
   
   appliesToCoverage: boolean("applies_to_coverage"),
   immigrationStatus: immigrationStatusEnum("immigration_status"),
-  // NUEVO: Campos adicionales para "Otro"
   immigrationStatusOther: text("immigration_status_other"),
   documentType: documentTypeEnum("document_type"),
   documentTypeOther: text("document_type_other"),
@@ -133,6 +151,7 @@ export const customers = pgTable("customers", {
   declaresOtherPeople: boolean("declares_other_people").default(false),
   
   createdByAgentId: uuid("created_by_agent_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  processingStartedAt: timestamp("processing_started_at"), // NUEVO: Para controlar acceso
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -150,6 +169,7 @@ export const policies = pgTable("policies", {
   planLink: text("plan_link"),
   taxCredit: decimal("tax_credit", { precision: 10, scale: 2 }),
   aorLink: text("aor_link"),
+  aorDocumentId: varchar("aor_document_id", { length: 100 }), // NUEVO: ID de Documenso
   notes: text("notes"),
 
   assignedProcessorId: uuid("assigned_processor_id").references(() => users.id, { onDelete: "set null" }),
@@ -192,7 +212,6 @@ export const dependents = pgTable("dependents", {
     relationship: varchar("relationship", { length: 100 }),
     birthDate: date("birth_date"),
     immigrationStatus: immigrationStatusEnum("immigration_status"),
-    // NUEVO: Campo adicional para "Otro" en dependientes
     immigrationStatusOther: text("immigration_status_other"),
     appliesToPolicy: boolean("applies_to_policy").default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -225,13 +244,97 @@ export const documents = pgTable("documents", {
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// --- RELACIONES ---
+// --- NUEVAS TABLAS PARA SISTEMA DE TAREAS Y PLANTILLAS ---
+
+export const customerTasks = pgTable("customer_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  policyId: uuid("policy_id").references(() => policies.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  type: taskTypeEnum("type").notNull().default("general"),
+  priority: taskPriorityEnum("priority").notNull().default("medium"),
+  status: taskStatusEnum("status").notNull().default("pending"),
+  assignedToId: uuid("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const postSaleTasks = pgTable("post_sale_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  type: taskTypeEnum("type").notNull(),
+  priority: taskPriorityEnum("priority").notNull().default("medium"),
+  status: taskStatusEnum("status").notNull().default("pending"),
+  assignedToId: uuid("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }),
+  policyId: uuid("policy_id").references(() => policies.id, { onDelete: "cascade" }),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  boardColumn: varchar("board_column", { length: 50 }).default("pending"),
+  position: integer("position").default(0),
+  tags: text("tags"), // JSON array of strings
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const documentTemplates = pgTable("document_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  type: templateTypeEnum("type").notNull(),
+  content: text("content").notNull(), // HTML/markdown content with variables
+  variables: text("variables"), // JSON array of variable definitions
+  isActive: boolean("is_active").default(true).notNull(),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const generatedDocuments = pgTable("generated_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id").notNull().references(() => documentTemplates.id, { onDelete: "restrict" }),
+  customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  policyId: uuid("policy_id").references(() => policies.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  generatedContent: text("generated_content").notNull(),
+  s3Key: text("s3_key"), // Si se guarda como archivo
+  generatedById: uuid("generated_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const taskComments = pgTable("task_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").references(() => customerTasks.id, { onDelete: "cascade" }),
+  postSaleTaskId: uuid("post_sale_task_id").references(() => postSaleTasks.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// --- RELACIONES ACTUALIZADAS ---
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   manager: one(users, { fields: [users.managerId], references: [users.id], relationName: "manager_to_agents" }),
   managedAgents: many(users, { relationName: "manager_to_agents" }),
+  assignedAgent: one(users, { fields: [users.assignedAgentId], references: [users.id], relationName: "call_center_agent" }),
+  callCenterAgents: many(users, { relationName: "call_center_agent" }),
   createdCustomers: many(customers),
   assignedPolicies: many(policies),
+  assignedTasks: many(customerTasks, { relationName: "assigned_tasks" }),
+  createdTasks: many(customerTasks, { relationName: "created_tasks" }),
+  assignedPostSaleTasks: many(postSaleTasks, { relationName: "assigned_post_sale_tasks" }),
+  createdPostSaleTasks: many(postSaleTasks, { relationName: "created_post_sale_tasks" }),
+  createdTemplates: many(documentTemplates),
+  generatedDocuments: many(generatedDocuments),
+  taskComments: many(taskComments),
   processorAssignments: many(processorManagerAssignments, { relationName: 'processor_assignments' }),
   managerAssignments: many(processorManagerAssignments, { relationName: 'manager_assignments' }),
   accounts: many(accounts),
@@ -247,6 +350,9 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   policies: many(policies),
   dependents: many(dependents),
   documents: many(documents),
+  tasks: many(customerTasks),
+  postSaleTasks: many(postSaleTasks),
+  generatedDocuments: many(generatedDocuments),
 }));
 
 export const policiesRelations = relations(policies, ({ one, many }) => ({
@@ -257,6 +363,9 @@ export const policiesRelations = relations(policies, ({ one, many }) => ({
     documents: many(documents),
     appointments: many(appointments),
     claims: many(claims),
+    tasks: many(customerTasks),
+    postSaleTasks: many(postSaleTasks),
+    generatedDocuments: many(generatedDocuments),
 }));
 
 export const processorManagerAssignmentsRelations = relations(processorManagerAssignments, ({ one }) => ({
@@ -301,7 +410,43 @@ export const appointmentsRelations = relations(appointments, ({ one }) => ({
 
 export const claimsRelations = relations(claims, ({ one }) => ({
     policy: one(policies, { fields: [claims.policyId], references: [policies.id] }),
-    customer: one(customers, { fields: [claims.customerId], references: [customers.id] }),
+    customer: one(customers, { fields: [claims.customerId], references: [claims.id] }),
+}));
+
+// --- NUEVAS RELACIONES PARA TAREAS Y PLANTILLAS ---
+
+export const customerTasksRelations = relations(customerTasks, ({ one, many }) => ({
+  customer: one(customers, { fields: [customerTasks.customerId], references: [customers.id] }),
+  policy: one(policies, { fields: [customerTasks.policyId], references: [policies.id] }),
+  assignedTo: one(users, { fields: [customerTasks.assignedToId], references: [users.id], relationName: "assigned_tasks" }),
+  createdBy: one(users, { fields: [customerTasks.createdById], references: [users.id], relationName: "created_tasks" }),
+  comments: many(taskComments),
+}));
+
+export const postSaleTasksRelations = relations(postSaleTasks, ({ one, many }) => ({
+  customer: one(customers, { fields: [postSaleTasks.customerId], references: [customers.id] }),
+  policy: one(policies, { fields: [postSaleTasks.policyId], references: [policies.id] }),
+  assignedTo: one(users, { fields: [postSaleTasks.assignedToId], references: [users.id], relationName: "assigned_post_sale_tasks" }),
+  createdBy: one(users, { fields: [postSaleTasks.createdById], references: [users.id], relationName: "created_post_sale_tasks" }),
+  comments: many(taskComments),
+}));
+
+export const documentTemplatesRelations = relations(documentTemplates, ({ one, many }) => ({
+  createdBy: one(users, { fields: [documentTemplates.createdById], references: [users.id] }),
+  generatedDocuments: many(generatedDocuments),
+}));
+
+export const generatedDocumentsRelations = relations(generatedDocuments, ({ one }) => ({
+  template: one(documentTemplates, { fields: [generatedDocuments.templateId], references: [documentTemplates.id] }),
+  customer: one(customers, { fields: [generatedDocuments.customerId], references: [customers.id] }),
+  policy: one(policies, { fields: [generatedDocuments.policyId], references: [policies.id] }),
+  generatedBy: one(users, { fields: [generatedDocuments.generatedById], references: [users.id] }),
+}));
+
+export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
+  task: one(customerTasks, { fields: [taskComments.taskId], references: [customerTasks.id] }),
+  postSaleTask: one(postSaleTasks, { fields: [taskComments.postSaleTaskId], references: [postSaleTasks.id] }),
+  createdBy: one(users, { fields: [taskComments.createdById], references: [users.id] }),
 }));
 
 // Add type definitions for better TypeScript support
@@ -321,3 +466,13 @@ export type Appointment = typeof appointments.$inferSelect;
 export type NewAppointment = typeof appointments.$inferInsert;
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
+export type CustomerTask = typeof customerTasks.$inferSelect;
+export type NewCustomerTask = typeof customerTasks.$inferInsert;
+export type PostSaleTask = typeof postSaleTasks.$inferSelect;
+export type NewPostSaleTask = typeof postSaleTasks.$inferInsert;
+export type DocumentTemplate = typeof documentTemplates.$inferSelect;
+export type NewDocumentTemplate = typeof documentTemplates.$inferInsert;
+export type GeneratedDocument = typeof generatedDocuments.$inferSelect;
+export type NewGeneratedDocument = typeof generatedDocuments.$inferInsert;
+export type TaskComment = typeof taskComments.$inferSelect;
+export type NewTaskComment = typeof taskComments.$inferInsert;

@@ -50,6 +50,13 @@
       "when": 1758058254140,
       "tag": "0006_even_nekra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1758122621206,
+      "tag": "0007_brave_pandemic",
+      "breakpoints": true
     }
   ]
 }

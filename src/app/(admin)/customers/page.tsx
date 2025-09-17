@@ -1,7 +1,7 @@
 // (admin)/customers/page.tsx
 
 import { Suspense, cache } from 'react';
-import { getCustomers, getPoliciesForBoard } from './actions';
+import { getCustomers, getPoliciesForBoard, getPostSaleTasks, getDocumentTemplates } from './actions';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlusCircle, MoreHorizontal, UserX, ChevronLeft, ChevronRight, CalendarPlus, ShieldAlert } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, UserX, ChevronLeft, ChevronRight, CalendarPlus, ShieldAlert, Trello, FileText } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import Link from 'next/link';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { policyStatusEnum } from '@/db/schema';
 import PostVentaModule from './components/post-venta-module';
+import PostVentaTrelloBoard from './components/post-venta-trello-board';
+import DocumentTemplatesManager from './components/document-templates-manager';
 
 interface PageProps {
   searchParams: {
@@ -26,6 +28,8 @@ interface PageProps {
 // Cache the server functions to avoid the "Server Functions cannot be called during initial render" error
 const getCachedCustomers = cache(getCustomers);
 const getCachedPoliciesForBoard = cache(getPoliciesForBoard);
+const getCachedPostSaleTasks = cache(getPostSaleTasks);
+const getCachedDocumentTemplates = cache(getDocumentTemplates);
 
 export default function CustomersPage({ searchParams }: PageProps) {
   const page = Number(searchParams.page) || 1;
@@ -36,10 +40,10 @@ export default function CustomersPage({ searchParams }: PageProps) {
       <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Gestión de Clientes
+            Gestión Integral de Clientes
           </h1>
           <p className="text-muted-foreground mt-1">
-            Busca, visualiza y gestiona las aplicaciones y el servicio post-venta.
+            Sistema completo de gestión de clientes, tareas, post-venta y documentos automatizados.
           </p>
         </div>
         <Button asChild size="lg">
@@ -51,9 +55,17 @@ export default function CustomersPage({ searchParams }: PageProps) {
       </header>
 
       <Tabs defaultValue="list" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
+        <TabsList className="grid w-full grid-cols-4 md:w-[600px]">
           <TabsTrigger value="list">Lista de Clientes</TabsTrigger>
           <TabsTrigger value="post-venta">Post-Venta (Kanban)</TabsTrigger>
+          <TabsTrigger value="trello-board">
+            <Trello className="mr-2 h-4 w-4" />
+            Tablero Trello
+          </TabsTrigger>
+          <TabsTrigger value="templates">
+            <FileText className="mr-2 h-4 w-4" />
+            Plantillas
+          </TabsTrigger>
         </TabsList>
         
         {/* PESTAÑA 1: LISTA DE CLIENTES */}
@@ -61,6 +73,9 @@ export default function CustomersPage({ searchParams }: PageProps) {
           <Card className="mt-4">
             <CardHeader>
               <CardTitle>Lista de Clientes</CardTitle>
+              <CardDescription>
+                Visualiza y gestiona todos los clientes del sistema con acceso controlado por rol.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Suspense key={page + search} fallback={<CustomersTableSkeleton />}>
@@ -70,10 +85,24 @@ export default function CustomersPage({ searchParams }: PageProps) {
           </Card>
         </TabsContent>
 
-        {/* PESTAÑA 2: MÓDULO DE POST-VENTA */}
+        {/* PESTAÑA 2: MÓDULO DE POST-VENTA TRADICIONAL */}
         <TabsContent value="post-venta">
           <Suspense fallback={<PolicyBoardSkeleton/>}>
             <PostVentaModuleWrapper />
+          </Suspense>
+        </TabsContent>
+
+        {/* PESTAÑA 3: TABLERO TRELLO DE POST-VENTA */}
+        <TabsContent value="trello-board">
+          <Suspense fallback={<TrelloBoardSkeleton/>}>
+            <TrelloBoardWrapper />
+          </Suspense>
+        </TabsContent>
+
+        {/* PESTAÑA 4: PLANTILLAS DE DOCUMENTOS */}
+        <TabsContent value="templates">
+          <Suspense fallback={<TemplatesSkeleton/>}>
+            <TemplatesWrapper />
           </Suspense>
         </TabsContent>
       </Tabs>
@@ -98,6 +127,7 @@ async function CustomersTable({ page, search }: { page: number, search: string }
               <TableHead>Estado Última Póliza</TableHead>
               <TableHead>Agente Creador</TableHead>
               <TableHead>Fecha de Creación</TableHead>
+              <TableHead>Estado de Procesamiento</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -133,6 +163,12 @@ async function CustomersTable({ page, search }: { page: number, search: string }
                     {agentName}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{formatDate(customer.createdAt)}</TableCell>
+                  <TableCell>
+                    {customer.processingStartedAt ? 
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800">En Procesamiento</Badge> : 
+                      <Badge variant="secondary">Pre-Procesamiento</Badge>
+                    }
+                  </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -142,6 +178,13 @@ async function CustomersTable({ page, search }: { page: number, search: string }
                         <DropdownMenuItem asChild>
                           <Link href={`/customers/${customer.id}`} className="cursor-pointer">Ver Detalles</Link>
                         </DropdownMenuItem>
+                        {!customer.processingStartedAt && (
+                          <DropdownMenuItem asChild>
+                            <Link href={`/customers/${customer.id}/tasks`} className="cursor-pointer">
+                              Gestionar Tareas
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -198,6 +241,7 @@ function CustomersTableSkeleton() {
             <TableHead><Skeleton className="h-5 w-32" /></TableHead>
             <TableHead><Skeleton className="h-5 w-40" /></TableHead>
             <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+            <TableHead><Skeleton className="h-5 w-32" /></TableHead>
             <TableHead><Skeleton className="h-5 w-20" /></TableHead>
           </TableRow>
         </TableHeader>
@@ -208,6 +252,7 @@ function CustomersTableSkeleton() {
               <TableCell><Skeleton className="h-6 w-28" /></TableCell>
               <TableCell><Skeleton className="h-6 w-36" /></TableCell>
               <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+              <TableCell><Skeleton className="h-6 w-32" /></TableCell>
               <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
             </TableRow>
           ))}
@@ -218,10 +263,20 @@ function CustomersTableSkeleton() {
   );
 }
 
-// --- NUEVO COMPONENTE DEL SERVIDOR (Wrapper) ---
+// --- NUEVOS COMPONENTES DE SERVIDOR (Wrappers) ---
 async function PostVentaModuleWrapper() {
   const policiesByStatus = await getCachedPoliciesForBoard();
   return <PostVentaModule policiesByStatus={policiesByStatus} />;
+}
+
+async function TrelloBoardWrapper() {
+  const tasksByColumn = await getCachedPostSaleTasks();
+  return <PostVentaTrelloBoard tasksByColumn={tasksByColumn} />;
+}
+
+async function TemplatesWrapper() {
+  const templates = await getCachedDocumentTemplates();
+  return <DocumentTemplatesManager templates={templates} />;
 }
 
 function PolicyBoardSkeleton() {
@@ -250,4 +305,55 @@ function PolicyBoardSkeleton() {
             ))}
         </div>
     )
+}
+
+function TrelloBoardSkeleton() {
+  const columns = 6;
+  return (
+    <div className="flex gap-4 p-6 overflow-x-auto min-h-[600px]">
+      {Array.from({ length: columns }).map((_, i) => (
+        <div key={i} className="flex-shrink-0 w-80">
+          <div className="p-3 rounded-t-lg bg-muted border-b-2 border-gray-200">
+            <Skeleton className="h-5 w-24" />
+          </div>
+          <div className="p-3 min-h-[500px] bg-gray-50/50 rounded-b-lg space-y-3">
+            {Array.from({ length: 2 }).map((_, j) => (
+              <Card key={j} className="p-3">
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-3 w-3/4 mb-2" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TemplatesSkeleton() {
+  return (
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-4 w-96" />
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+              <Skeleton className="h-8 w-8" />
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

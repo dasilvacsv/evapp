@@ -1,14 +1,13 @@
 import { renderToBuffer } from '@react-pdf/renderer';
-import { AORTemplate } from './aor-pdf-template'; // Tu componente de React para el PDF
-import { documensoClient, DocumensoDocument } from './documenso'; // Importamos el tipo también
+import { AORTemplate } from './aor-pdf-template';
+import { documensoClient, DocumensoDocument } from './documenso';
 import { db } from './db';
-import { customers, users, policies } from '@/db/schema'; // ✅ Importamos `policies`
+import { customers, users, policies } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
-// ✅ CAMBIO 1: Agregamos `policyId` que es CRÍTICO para el webhook.
 interface AORGenerationData {
   customerId: string;
-  policyId: string; // <-- Esencial para enlazar el documento a la póliza
+  policyId: string;
   policyData: {
     insuranceCompany: string;
     planName: string;
@@ -22,7 +21,6 @@ interface AORGenerationData {
 export class AORService {
   /**
    * Genera un PDF de AOR para un cliente específico.
-   * (Este método no necesita cambios, ya está bien)
    */
   static async generateAORPDF(data: AORGenerationData): Promise<Buffer> {
     // Obtener información del cliente y del agente de la BD
@@ -40,11 +38,12 @@ export class AORService {
         email: customer.email || undefined,
         phone: customer.phone || undefined,
         address: customer.address || undefined,
+        ssn: customer.ssn || undefined,
+        birthDate: customer.birthDate || undefined,
       },
       agent: {
         fullName: agent.name || `${agent.firstName} ${agent.lastName}`,
         email: agent.email,
-        // licenseNumber: agent.licenseNumber, // Ejemplo
       },
       policy: data.policyData,
       createdAt: new Date(),
@@ -55,12 +54,11 @@ export class AORService {
   }
 
   /**
-   * ✅ CAMBIO 2: Lógica principal refactorizada, simplificada y corregida.
-   * Ahora usa el nuevo método del documensoClient, actualiza la BD y es más eficiente.
+   * Crea y envía un documento AOR usando Documenso con mejoras
    */
-  static async createAndSendAOR(data: AORGenerationData): Promise<DocumensoDocument> {
+  static async createAndSendAOR(data: AORGenerationData): Promise<{ id: string; signingUrl: string; }> {
     try {
-      // 1. Obtener la información del cliente (solo una vez)
+      // 1. Obtener la información del cliente
       const customer = await db.query.customers.findFirst({
         where: eq(customers.id, data.customerId),
       });
@@ -73,11 +71,11 @@ export class AORService {
       console.log(`Generando PDF para ${customer.fullName}...`);
       const pdfBuffer = await this.generateAORPDF(data);
 
-      // 3. Usar el nuevo método para crear y enviar el documento en un solo paso
+      // 3. Crear documento en Documenso con metadatos mejorados
       console.log(`Enviando AOR a Documenso para la póliza ${data.policyId}...`);
-      const sentDocument = await documensoClient.createAndSendAorDocument({
+      const document = await documensoClient.createAndSendAorDocument({
         title: `AOR - ${customer.fullName} - ${data.policyData.insuranceCompany}`,
-        policyId: data.policyId, // <-- Pasamos el ID de la póliza
+        policyId: data.policyId,
         customerId: data.customerId,
         recipient: {
           email: customer.email,
@@ -87,15 +85,22 @@ export class AORService {
         fileName: `AOR_${customer.fullName.replace(/\s+/g, '_')}.pdf`,
       });
 
-      // 4. (IMPORTANTE) Guardar la referencia del documento en nuestra base de datos
-      console.log(`Actualizando la póliza ${data.policyId} con el ID del documento ${sentDocument.id}...`);
+      // 4. Actualizar la póliza con la información del documento
       await db
         .update(policies)
-        .set({ aorLink: sentDocument.id }) // Guardamos el ID de Documenso
+        .set({ 
+          aorDocumentId: document.id,
+          status: 'contacting' // Cambiar estado automáticamente
+        })
         .where(eq(policies.id, data.policyId));
         
       console.log('✅ Proceso de AOR completado exitosamente.');
-      return sentDocument;
+      
+      // Retornar información compatible con el sistema actual
+      return {
+        id: document.id,
+        signingUrl: `https://app.documenso.com/sign/${document.id}`, // URL de firma estimada
+      };
 
     } catch (error) {
       console.error('Error creando el documento AOR:', error);
@@ -104,16 +109,63 @@ export class AORService {
   }
 
   /**
-   * Verifica el estado de un documento de Documenso (útil para comprobaciones manuales).
-   * (Este método no necesita cambios)
+   * Verifica el estado de un documento de Documenso
    */
   static async getDocumentStatus(documentId: string) {
     try {
       const document = await documensoClient.getDocument(documentId);
-      return { status: document.status };
+      return { 
+        status: document.status,
+        isCompleted: document.status === 'COMPLETED',
+        isPending: document.status === 'PENDING',
+      };
     } catch (error) {
       console.error(`Error al obtener el estado del documento ${documentId}:`, error);
       throw new Error('Failed to fetch document status');
+    }
+  }
+
+  /**
+   * Procesa webhooks de Documenso para actualizar el estado de las pólizas
+   */
+  static async processDocumensoWebhook(eventType: string, documentId: string, policyId?: string) {
+    if (!policyId) {
+      console.warn(`Webhook ${eventType} recibido sin policyId para documento ${documentId}`);
+      return;
+    }
+
+    try {
+      let newStatus: string | undefined;
+      
+      switch (eventType) {
+        case 'document.sent':
+          newStatus = 'contacting';
+          break;
+        case 'document.opened':
+          // Opcional: actualizar timestamp de cuando el cliente abrió el documento
+          break;
+        case 'document.signed':
+          newStatus = 'info_captured';
+          break;
+        case 'document.completed':
+          newStatus = 'approved';
+          break;
+        case 'document.rejected':
+        case 'document.cancelled':
+          newStatus = 'missing_docs'; // Revertir para requerir acción
+          break;
+      }
+
+      if (newStatus) {
+        await db
+          .update(policies)
+          .set({ status: newStatus as any })
+          .where(eq(policies.id, policyId));
+          
+        console.log(`✅ Póliza ${policyId} actualizada a estado: ${newStatus}`);
+      }
+    } catch (error) {
+      console.error(`Error procesando webhook ${eventType} para póliza ${policyId}:`, error);
     }
   }
 }

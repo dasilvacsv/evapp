@@ -2,15 +2,59 @@
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments } from '@/db/schema';
+import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments, customerTasks, postSaleTasks, documentTemplates, generatedDocuments, taskComments } from '@/db/schema';
 import { and, eq, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { createPresignedPostForUpload, deleteFromS3, getPresignedUrlForDownload } from "@/lib/s3";
-import { createAppointmentSchema, createClaimSchema, createFullApplicationSchema } from './schemas';
+import { createAppointmentSchema, createClaimSchema, createFullApplicationSchema, createTaskSchema, createPostSaleTaskSchema, createTemplateSchema } from './schemas';
 import { generateReadablePolicyId, formatDateUS, formatTextUppercase } from '@/lib/policy-utils';
 import { AORService } from '@/lib/aor-service';
 
-// +++ NUEVA ACCIÓN PARA EL TABLERO KANBAN DE POST-VENTA +++
+// --- UTILIDADES DE PERMISOS ---
+
+function hasDownloadPermission(user: any): boolean {
+  if (!user) return false;
+  // Solo super_admin, manager y processor pueden descargar documentos
+  const allowedRoles = ['super_admin', 'manager', 'processor'];
+  return allowedRoles.includes(user.role) && user.canDownload;
+}
+
+function canAccessCustomerDetails(user: any, customer: any): boolean {
+  if (!user || !customer) return false;
+  
+  // Super admin puede ver todo
+  if (user.role === 'super_admin') return true;
+  
+  // Si el caso ya fue enviado a procesamiento, solo processor y super_admin pueden verlo
+  if (customer.processingStartedAt) {
+    return ['super_admin', 'processor'].includes(user.role);
+  }
+  
+  // Manager puede ver casos de su equipo
+  if (user.role === 'manager') {
+    // Necesitamos verificar si el agente creador pertenece al manager
+    return true; // Se verifica en la consulta
+  }
+  
+  // Agent solo puede ver sus propios casos
+  if (user.role === 'agent') {
+    return customer.createdByAgentId === user.id;
+  }
+  
+  // Call center puede ver casos si tiene agente asignado
+  if (user.role === 'call_center') {
+    return customer.createdByAgentId === user.assignedAgentId;
+  }
+  
+  // Customer service puede ver todo lo que no esté en procesamiento
+  if (user.role === 'customer_service') {
+    return !customer.processingStartedAt;
+  }
+  
+  return false;
+}
+
+// +++ ACCIONES PARA EL TABLERO KANBAN DE POST-VENTA +++
 export async function getPoliciesForBoard() {
   const session = await auth();
   const user = session?.user;
@@ -34,6 +78,13 @@ export async function getPoliciesForBoard() {
       const managerCustomerIds = await db.select({ id: customers.id }).from(customers).where(inArray(customers.createdByAgentId, agentIds));
        if (managerCustomerIds.length > 0) {
         conditions.push(inArray(policies.customerId, managerCustomerIds.map(c => c.id)));
+      } else {
+        return {};
+      }
+    } else if (user.role === 'call_center' && user.assignedAgentId) {
+      const callCenterCustomerIds = await db.select({ id: customers.id }).from(customers).where(eq(customers.createdByAgentId, user.assignedAgentId));
+      if (callCenterCustomerIds.length > 0) {
+        conditions.push(inArray(policies.customerId, callCenterCustomerIds.map(c => c.id)));
       } else {
         return {};
       }
@@ -71,7 +122,7 @@ export async function getPoliciesForBoard() {
   }
 }
 
-// --- ACCIONES PARA SUBIDA DE ARCHIVOS ---
+// --- ACCIONES PARA SUBIDA DE ARCHIVOS CON PERMISOS ---
 export async function generatePresignedUrlForUpload({ fileName, fileType }: { fileName: string, fileType: string }) {
   const session = await auth();
   const user = session?.user;
@@ -88,7 +139,8 @@ export async function generatePresignedUrlForUpload({ fileName, fileType }: { fi
 
 export async function deleteFileFromS3(key: string) {
     const session = await auth();
-    if (!session?.user?.id) {
+    const user = session?.user;
+    if (!user?.id || !hasDownloadPermission(user)) {
         return { success: false, error: "No autorizado" };
     }
     await deleteFromS3(key);
@@ -104,7 +156,7 @@ function formatDateForDB(date: Date | undefined): string | undefined {
   return `${year}-${month}-${day}`;
 }
 
-// --- ACCIONES PRINCIPALES DEL MÓDULO DE CLIENTES ---
+// --- ACCIONES PRINCIPALES DEL MÓDULO DE CLIENTES CON PERMISOS ---
 
 export async function getCustomers(page = 1, limit = 10, search = '') {
   const session = await auth();
@@ -115,6 +167,8 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
 
   try {
     const conditions = [];
+    
+    // Control de acceso por rol
     if (user.role === 'agent') {
       conditions.push(eq(customers.createdByAgentId, user.id));
     } else if (user.role === 'manager') {
@@ -124,7 +178,13 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
       if (agentIds.length > 0) {
         conditions.push(inArray(customers.createdByAgentId, agentIds));
       }
+    } else if (user.role === 'call_center' && user.assignedAgentId) {
+      conditions.push(eq(customers.createdByAgentId, user.assignedAgentId));
+    } else if (user.role === 'customer_service') {
+      // Customer service ve todo excepto casos en procesamiento
+      conditions.push(eq(customers.processingStartedAt, null));
     }
+    // super_admin y processor ven todo
 
     if (search) {
       conditions.push(ilike(customers.fullName, `%${search}%`));
@@ -234,6 +294,7 @@ export async function getCustomerDetails(customerId: string) {
                         planLink: true,
                         taxCredit: true,
                         aorLink: true,
+                        aorDocumentId: true,
                         notes: true,
                         assignedProcessorId: true,
                         commissionStatus: true,
@@ -258,6 +319,34 @@ export async function getCustomerDetails(customerId: string) {
                     },
                     orderBy: [desc(policies.createdAt)]
                 },
+                tasks: {
+                    with: {
+                        assignedTo: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        },
+                        createdBy: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        },
+                        comments: {
+                            with: {
+                                createdBy: {
+                                    columns: { firstName: true, lastName: true, name: true }
+                                }
+                            },
+                            orderBy: [desc(taskComments.createdAt)]
+                        }
+                    },
+                    orderBy: [desc(customerTasks.createdAt)]
+                },
+                generatedDocuments: {
+                    with: {
+                        template: true,
+                        generatedBy: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        }
+                    },
+                    orderBy: [desc(generatedDocuments.createdAt)]
+                }
             }
         });
 
@@ -265,7 +354,8 @@ export async function getCustomerDetails(customerId: string) {
             return null;
         }
 
-        if (user.role === 'agent' && customerDetails.createdByAgentId !== user.id) {
+        // Verificar permisos de acceso
+        if (!canAccessCustomerDetails(user, customerDetails)) {
             throw new Error("Acceso denegado.");
         }
 
@@ -279,8 +369,9 @@ export async function getCustomerDetails(customerId: string) {
 
 export async function getDocumentUrl(s3Key: string) {
     const session = await auth();
-    if (!session?.user?.id) {
-        return { success: false, error: "No autorizado" };
+    const user = session?.user;
+    if (!user?.id || !hasDownloadPermission(user)) {
+        return { success: false, error: "No tienes permiso para descargar documentos" };
     }
     try {
         const url = await getPresignedUrlForDownload(s3Key);
@@ -292,13 +383,12 @@ export async function getDocumentUrl(s3Key: string) {
 }
 
 /**
- * Crea la aplicación completa con validaciones mejoradas y formateo automático
- * ACTUALIZADO: Ahora incluye generación automática de AOR
+ * Crea la aplicación completa con validaciones mejoradas, formateo automático y AOR automático
  */
 export async function createFullApplication(data: unknown) {
     const session = await auth();
     const agent = session?.user;
-    if (!agent?.id || (agent.role !== 'agent' && agent.role !== 'manager')) {
+    if (!agent?.id || !['agent', 'manager', 'call_center'].includes(agent.role)) {
         return { success: false, message: "No tienes permiso para crear aplicaciones." };
     }
 
@@ -316,6 +406,12 @@ export async function createFullApplication(data: unknown) {
     try {
         const result = await db.transaction(async (tx) => {
             console.log("1. Creando cliente...");
+            
+            // Determinar el agente que debe registrarse
+            let actualAgentId = agent.id;
+            if (agent.role === 'call_center' && agent.assignedAgentId) {
+                actualAgentId = agent.assignedAgentId;
+            }
             
             // 1. Crear el cliente con formateo automático
             const [newCustomer] = await tx.insert(customers).values({
@@ -335,7 +431,7 @@ export async function createFullApplication(data: unknown) {
                 taxType: validatedData.customer.taxType || null,
                 income: validatedData.customer.income ? String(validatedData.customer.income) : null,
                 declaresOtherPeople: validatedData.customer.declaresOtherPeople,
-                createdByAgentId: agent.id!,
+                createdByAgentId: actualAgentId, // Usar el agente correcto
             }).returning({ id: customers.id });
 
             if (!newCustomer?.id) throw new Error("No se pudo crear el cliente");
@@ -350,7 +446,7 @@ export async function createFullApplication(data: unknown) {
             const [newPolicy] = await tx.insert(policies).values({
                 customerId: customerId,
                 insuranceCompany: validatedData.policy.insuranceCompany.trim(),
-                marketplaceId: readablePolicyId, // Usar el ID legible aquí
+                marketplaceId: readablePolicyId,
                 planName: formatTextUppercase(validatedData.policy.planName),
                 monthlyPremium: validatedData.policy.monthlyPremium ? String(validatedData.policy.monthlyPremium) : null,
                 effectiveDate: formatDateForDB(validatedData.policy.effectiveDate),
@@ -452,16 +548,17 @@ export async function createFullApplication(data: unknown) {
                 console.log("Método de pago creado con ID:", createdPaymentMethod.id);
             }
 
-            return { customerId, policyId: newPolicy.id, readablePolicyId };
+            return { customerId, policyId: newPolicy.id, readablePolicyId, actualAgentId };
         });
 
         console.log("Transacción completada exitosamente:", result);
 
-        // 6. NUEVO: Generar y enviar AOR automáticamente
+        // 6. GENERACIÓN AUTOMÁTICA DE AOR
         console.log("6. Generando y enviando AOR automáticamente...");
         try {
             const aorResult = await AORService.createAndSendAOR({
                 customerId: result.customerId,
+                policyId: result.policyId,
                 policyData: {
                     insuranceCompany: validatedData.policy.insuranceCompany,
                     planName: validatedData.policy.planName,
@@ -469,22 +566,35 @@ export async function createFullApplication(data: unknown) {
                     effectiveDate: validatedData.policy.effectiveDate ? formatDateUS(validatedData.policy.effectiveDate) : undefined,
                     monthlyPremium: validatedData.policy.monthlyPremium ? String(validatedData.policy.monthlyPremium) : undefined,
                 },
-                createdByAgentId: agent.id!,
+                createdByAgentId: result.actualAgentId,
             });
 
             console.log("AOR creado y enviado exitosamente:", aorResult);
 
-            // Actualizar la póliza con el enlace del AOR
+            // Actualizar la póliza con el enlace del AOR y el ID de Documenso
             await db.update(policies)
                 .set({ 
                     aorLink: aorResult.signingUrl,
-                    status: 'contacting' // Cambiar el estado a "contactando" ya que se envió el AOR
+                    aorDocumentId: aorResult.id,
+                    status: 'contacting'
                 })
                 .where(eq(policies.id, result.policyId));
 
+            // 7. Crear tarea automática para seguimiento del AOR
+            await db.insert(customerTasks).values({
+                customerId: result.customerId,
+                policyId: result.policyId,
+                title: "Seguimiento de Firma AOR",
+                description: `AOR enviado automáticamente para la póliza ${result.readablePolicyId}. Pendiente de firma del cliente.`,
+                type: "aor_signature",
+                priority: "high",
+                assignedToId: result.actualAgentId,
+                createdById: agent.id!,
+                dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 días
+            });
+
         } catch (aorError) {
             console.warn("Advertencia: No se pudo generar el AOR automáticamente:", aorError);
-            // No fallar toda la transacción si solo falla el AOR
         }
 
         revalidatePath('/customers');
@@ -516,6 +626,10 @@ export async function getCustomersForSelection() {
       const agentIds = teamAgentIds.map(a => a.id);
       agentIds.push(user.id);
       conditions.push(inArray(customers.createdByAgentId, agentIds));
+    } else if (user.role === 'call_center' && user.assignedAgentId) {
+      conditions.push(eq(customers.createdByAgentId, user.assignedAgentId));
+    } else if (user.role === 'customer_service') {
+      conditions.push(eq(customers.processingStartedAt, null));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -621,17 +735,16 @@ export async function getPaymentMethodDetails(policyId: string) {
   }
 }
 
-// NUEVA ACCIÓN: Reenviar AOR manualmente
+// ACCIÓN: Reenviar AOR manualmente
 export async function resendAOR(customerId: string, policyId: string) {
   const session = await auth();
   const user = session?.user;
   
-  if (!user?.id || (user.role !== 'agent' && user.role !== 'manager')) {
+  if (!user?.id || !['agent', 'manager', 'customer_service'].includes(user.role)) {
     return { success: false, message: "No tienes permiso para esta acción." };
   }
 
   try {
-    // Obtener datos de la póliza
     const policy = await db.query.policies.findFirst({
       where: eq(policies.id, policyId),
       with: {
@@ -643,14 +756,15 @@ export async function resendAOR(customerId: string, policyId: string) {
       return { success: false, message: "Póliza no encontrada." };
     }
 
-    // Verificar permisos del agente
-    if (user.role === 'agent' && policy.customer.createdByAgentId !== user.id) {
+    // Verificar permisos
+    if (!canAccessCustomerDetails(user, policy.customer)) {
       return { success: false, message: "No tienes permiso para esta póliza." };
     }
 
     // Generar y enviar nuevo AOR
     const aorResult = await AORService.createAndSendAOR({
       customerId,
+      policyId,
       policyData: {
         insuranceCompany: policy.insuranceCompany || '',
         planName: policy.planName || '',
@@ -658,12 +772,15 @@ export async function resendAOR(customerId: string, policyId: string) {
         effectiveDate: policy.effectiveDate ? formatDateUS(policy.effectiveDate) : undefined,
         monthlyPremium: policy.monthlyPremium || undefined,
       },
-      createdByAgentId: user.id,
+      createdByAgentId: policy.customer.createdByAgentId,
     });
 
     // Actualizar la póliza con el nuevo enlace
     await db.update(policies)
-      .set({ aorLink: aorResult.signingUrl })
+      .set({ 
+        aorLink: aorResult.signingUrl,
+        aorDocumentId: aorResult.id,
+      })
       .where(eq(policies.id, policyId));
 
     revalidatePath('/customers');
@@ -679,5 +796,340 @@ export async function resendAOR(customerId: string, policyId: string) {
       success: false, 
       message: `Error al reenviar AOR: ${error instanceof Error ? error.message : 'Error desconocido'}` 
     };
+  }
+}
+
+// ACCIÓN: Marcar caso como enviado a procesamiento
+export async function sendToProcessing(customerId: string) {
+  const session = await auth();
+  const user = session?.user;
+  
+  if (!user?.id || !['agent', 'manager'].includes(user.role)) {
+    return { success: false, message: "No tienes permiso para esta acción." };
+  }
+
+  try {
+    await db.update(customers)
+      .set({ processingStartedAt: new Date() })
+      .where(eq(customers.id, customerId));
+
+    revalidatePath('/customers');
+    return { success: true, message: "Caso enviado a procesamiento." };
+  } catch (error) {
+    console.error("Error enviando a procesamiento:", error);
+    return { success: false, message: "Error al enviar a procesamiento." };
+  }
+}
+
+// --- NUEVAS ACCIONES PARA SISTEMA DE TAREAS ---
+
+export async function createCustomerTask(data: unknown) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id) return { success: false, message: "No autorizado." };
+
+  const parseResult = createTaskSchema.safeParse(data);
+  if (!parseResult.success) {
+    return { success: false, message: "Datos inválidos.", errors: parseResult.error.flatten() };
+  }
+
+  const { customerId, policyId, title, description, type, priority, assignedToId, dueDate } = parseResult.data;
+
+  try {
+    await db.insert(customerTasks).values({
+      customerId,
+      policyId,
+      title: formatTextUppercase(title),
+      description: description ? formatTextUppercase(description) : null,
+      type,
+      priority,
+      assignedToId,
+      createdById: user.id,
+      dueDate,
+    });
+
+    revalidatePath('/customers');
+    return { success: true, message: "Tarea creada con éxito." };
+  } catch (error) {
+    console.error("Error al crear tarea:", error);
+    return { success: false, message: "No se pudo crear la tarea." };
+  }
+}
+
+export async function updateCustomerTask(taskId: string, data: unknown) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id) return { success: false, message: "No autorizado." };
+
+  try {
+    const updateData: any = {};
+    const parsedData = data as any;
+
+    if (parsedData.status) updateData.status = parsedData.status;
+    if (parsedData.status === 'completed') updateData.completedAt = new Date();
+    if (parsedData.notes) updateData.notes = formatTextUppercase(parsedData.notes);
+
+    await db.update(customerTasks)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(customerTasks.id, taskId));
+
+    revalidatePath('/customers');
+    return { success: true, message: "Tarea actualizada con éxito." };
+  } catch (error) {
+    console.error("Error al actualizar tarea:", error);
+    return { success: false, message: "No se pudo actualizar la tarea." };
+  }
+}
+
+export async function createPostSaleTask(data: unknown) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id || !['customer_service', 'manager', 'super_admin'].includes(user.role)) {
+    return { success: false, message: "No autorizado." };
+  }
+
+  const parseResult = createPostSaleTaskSchema.safeParse(data);
+  if (!parseResult.success) {
+    return { success: false, message: "Datos inválidos.", errors: parseResult.error.flatten() };
+  }
+
+  const taskData = parseResult.data;
+
+  try {
+    await db.insert(postSaleTasks).values({
+      ...taskData,
+      title: formatTextUppercase(taskData.title),
+      description: taskData.description ? formatTextUppercase(taskData.description) : null,
+      createdById: user.id,
+    });
+
+    revalidatePath('/customers');
+    return { success: true, message: "Tarea de post-venta creada con éxito." };
+  } catch (error) {
+    console.error("Error al crear tarea de post-venta:", error);
+    return { success: false, message: "No se pudo crear la tarea." };
+  }
+}
+
+export async function getPostSaleTasks() {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id || !['customer_service', 'manager', 'super_admin'].includes(user.role)) {
+    throw new Error("No autorizado");
+  }
+
+  try {
+    const tasks = await db.query.postSaleTasks.findMany({
+      with: {
+        customer: { columns: { id: true, fullName: true } },
+        policy: { columns: { id: true, marketplaceId: true, insuranceCompany: true } },
+        assignedTo: { columns: { id: true, name: true, firstName: true, lastName: true } },
+        createdBy: { columns: { id: true, name: true, firstName: true, lastName: true } },
+      },
+      orderBy: [desc(postSaleTasks.createdAt)],
+    });
+
+    // Organizar por columnas del tablero
+    const tasksByColumn = tasks.reduce((acc, task) => {
+      const column = task.boardColumn || 'pending';
+      if (!acc[column]) acc[column] = [];
+      acc[column].push(task);
+      return acc;
+    }, {} as Record<string, typeof tasks>);
+
+    return tasksByColumn;
+  } catch (error) {
+    console.error("Error al obtener tareas de post-venta:", error);
+    throw new Error("No se pudieron obtener las tareas.");
+  }
+}
+
+export async function updatePostSaleTask(taskId: string, data: unknown) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id) return { success: false, message: "No autorizado." };
+
+  try {
+    const updateData: any = { updatedAt: new Date() };
+    const parsedData = data as any;
+
+    if (parsedData.status) updateData.status = parsedData.status;
+    if (parsedData.boardColumn) updateData.boardColumn = parsedData.boardColumn;
+    if (parsedData.status === 'completed') updateData.completedAt = new Date();
+
+    await db.update(postSaleTasks)
+      .set(updateData)
+      .where(eq(postSaleTasks.id, taskId));
+
+    revalidatePath('/customers');
+    return { success: true, message: "Tarea actualizada con éxito." };
+  } catch (error) {
+    console.error("Error al actualizar tarea:", error);
+    return { success: false, message: "No se pudo actualizar la tarea." };
+  }
+}
+
+// --- NUEVAS ACCIONES PARA PLANTILLAS DINÁMICAS ---
+
+export async function createDocumentTemplate(data: unknown) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id || !['manager', 'super_admin'].includes(user.role)) {
+    return { success: false, message: "No autorizado." };
+  }
+
+  const parseResult = createTemplateSchema.safeParse(data);
+  if (!parseResult.success) {
+    return { success: false, message: "Datos inválidos.", errors: parseResult.error.flatten() };
+  }
+
+  const templateData = parseResult.data;
+
+  try {
+    await db.insert(documentTemplates).values({
+      ...templateData,
+      createdById: user.id,
+    });
+
+    revalidatePath('/customers');
+    return { success: true, message: "Plantilla creada con éxito." };
+  } catch (error) {
+    console.error("Error al crear plantilla:", error);
+    return { success: false, message: "No se pudo crear la plantilla." };
+  }
+}
+
+export async function getDocumentTemplates() {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("No autorizado");
+
+  try {
+    return await db.query.documentTemplates.findMany({
+      where: eq(documentTemplates.isActive, true),
+      with: {
+        createdBy: { columns: { name: true, firstName: true, lastName: true } }
+      },
+      orderBy: [desc(documentTemplates.createdAt)],
+    });
+  } catch (error) {
+    console.error("Error al obtener plantillas:", error);
+    throw new Error("No se pudieron obtener las plantillas.");
+  }
+}
+
+export async function generateDocumentFromTemplate(templateId: string, customerId: string, policyId?: string) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id) return { success: false, message: "No autorizado." };
+
+  try {
+    // Obtener la plantilla
+    const template = await db.query.documentTemplates.findFirst({
+      where: eq(documentTemplates.id, templateId)
+    });
+
+    if (!template) {
+      return { success: false, message: "Plantilla no encontrada." };
+    }
+
+    // Obtener datos del cliente y póliza
+    const customer = await db.query.customers.findFirst({
+      where: eq(customers.id, customerId),
+      with: {
+        policies: policyId ? {
+          where: eq(policies.id, policyId)
+        } : { limit: 1 }
+      }
+    });
+
+    if (!customer) {
+      return { success: false, message: "Cliente no encontrado." };
+    }
+
+    const policy = customer.policies[0];
+
+    // Generar contenido reemplazando variables
+    let generatedContent = template.content;
+    const variables = {
+      customerName: customer.fullName,
+      customerEmail: customer.email || '',
+      customerPhone: customer.phone || '',
+      customerAddress: customer.address || '',
+      policyId: policy?.marketplaceId || '',
+      insuranceCompany: policy?.insuranceCompany || '',
+      planName: policy?.planName || '',
+      monthlyPremium: policy?.monthlyPremium || '',
+      currentDate: new Date().toLocaleDateString(),
+    };
+
+    // Reemplazar variables en el contenido
+    Object.entries(variables).forEach(([key, value]) => {
+      const regex = new RegExp(`{{${key}}}`, 'g');
+      generatedContent = generatedContent.replace(regex, value);
+    });
+
+    // Guardar documento generado
+    const [generatedDoc] = await db.insert(generatedDocuments).values({
+      templateId,
+      customerId,
+      policyId,
+      title: `${template.name} - ${customer.fullName}`,
+      generatedContent,
+      generatedById: user.id,
+    }).returning({ id: generatedDocuments.id });
+
+    revalidatePath('/customers');
+    return {
+      success: true,
+      message: "Documento generado con éxito.",
+      data: { documentId: generatedDoc.id, content: generatedContent }
+    };
+  } catch (error) {
+    console.error("Error al generar documento:", error);
+    return { success: false, message: "No se pudo generar el documento." };
+  }
+}
+
+// Acción para obtener usuarios del equipo para asignar tareas
+export async function getTeamUsers() {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id) throw new Error("No autorizado");
+
+  try {
+    const conditions = [];
+
+    if (user.role === 'manager') {
+      // Manager ve su equipo
+      const teamIds = await db.select({ id: users.id })
+        .from(users)
+        .where(eq(users.managerId, user.id));
+      const agentIds = teamIds.map(u => u.id);
+      agentIds.push(user.id);
+      conditions.push(inArray(users.id, agentIds));
+    } else if (user.role === 'super_admin') {
+      // Super admin ve todos
+      conditions.push(eq(users.isActive, true));
+    } else {
+      // Otros roles solo se ven a sí mismos
+      conditions.push(eq(users.id, user.id));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    return await db.query.users.findMany({
+      where: whereClause,
+      columns: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+      },
+      orderBy: [users.firstName],
+    });
+  } catch (error) {
+    console.error("Error al obtener usuarios del equipo:", error);
+    throw new Error("No se pudieron obtener los usuarios.");
   }
 }
