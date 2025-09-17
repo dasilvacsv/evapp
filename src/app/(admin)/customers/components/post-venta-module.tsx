@@ -91,47 +91,55 @@ export default function PostVentaModule({ policiesByStatus }: PostVentaModulePro
 
     // --- NUEVA FUNCIÓN PARA MANEJAR EL DRAG-AND-DROP ---
     const handleDragEnd = (result: any) => {
-        const { source, destination, draggableId } = result;
+    const { source, destination, draggableId } = result;
 
-        if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) {
-            return;
-        }
+    if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) {
+        return;
+    }
 
-        const startColumn = policies[source.droppableId];
-        const endColumn = policies[destination.droppableId];
-        const originalPolicies = JSON.parse(JSON.stringify(policies)); // Copia profunda para revertir
+    // --- LÓGICA MEJORADA PARA EVITAR ERRORES ---
 
-        const [movedPolicy] = startColumn.splice(source.index, 1);
-        
-        // Si las columnas son diferentes, actualiza el estado de la póliza
-        if (startColumn !== endColumn) {
-            movedPolicy.status = destination.droppableId as Policy['status'];
-            endColumn.splice(destination.index, 0, movedPolicy);
-        } else {
-            // Si es la misma columna, solo reordena
-            startColumn.splice(destination.index, 0, movedPolicy);
-        }
+    // 1. Guardar una copia intacta del estado original para poder revertir
+    const originalPolicies = JSON.parse(JSON.stringify(policies)); 
 
-        const newPoliciesState = {
-            ...policies,
-            [source.droppableId]: startColumn,
-            [destination.droppableId]: endColumn,
-        };
-        
-        setPolicies(newPoliciesState); // Actualización optimista
+    // 2. Crear copias de las columnas de origen y destino para manipularlas de forma segura
+    const sourceColumn = Array.from(policies[source.droppableId] || []);
+    const destColumn = source.droppableId === destination.droppableId 
+        ? sourceColumn 
+        : Array.from(policies[destination.droppableId] || []);
 
-        startTransition(async () => {
-            try {
-                const res = await updatePolicyStatus(draggableId, destination.droppableId);
-                if (!res.success) throw new Error(res.message);
-                toast.success(`Póliza movida a "${getStatusLabel(destination.droppableId)}"`);
-                // No es necesario router.refresh() si la UI ya está bien, pero puedes añadirlo si otras partes de la página dependen de esto.
-            } catch (error: any) {
-                toast.error(`Error al mover la póliza: ${error.message}`);
-                setPolicies(originalPolicies); // Revertir en caso de error
-            }
-        });
+    // 3. Mover la póliza entre las copias de las columnas
+    const [movedPolicy] = sourceColumn.splice(source.index, 1);
+    destColumn.splice(destination.index, 0, movedPolicy);
+
+    // 4. Construir el nuevo estado para la actualización visual optimista
+    const newPoliciesState = {
+        ...policies,
+        [source.droppableId]: sourceColumn,
+        [destination.droppableId]: destColumn,
     };
+    
+    setPolicies(newPoliciesState); // Actualización optimista
+
+    startTransition(async () => {
+        try {
+            const res = await updatePolicyStatus(draggableId, destination.droppableId);
+            
+            // Si el servidor devuelve un error, lo lanzamos para que lo capture el catch
+            if (!res.success) {
+                throw new Error(res.message);
+            }
+            
+            toast.success(`Póliza movida a "${getStatusLabel(destination.droppableId)}"`);
+            // router.refresh() es opcional aquí, ya que la UI ya está sincronizada
+        
+        } catch (error: any) {
+            // Si algo falla, mostramos el error y revertimos al estado original
+            toast.error(`Error al mover la póliza: ${error.message}`);
+            setPolicies(originalPolicies); 
+        }
+    });
+};
 
     const boardColumns: (typeof policyStatusEnum.enumValues[number])[] = [
         'new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs', 'sent_to_carrier', 'approved', 'active', 'cancelled'
