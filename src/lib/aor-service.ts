@@ -1,5 +1,6 @@
-// FIX 1: Importación corregida para compatibilidad con el entorno de servidor.
-import ReactPDF from '@react-pdf/renderer';
+// services/AORService.ts
+
+import * as ReactPDF from '@react-pdf/renderer';
 import { AORTemplate } from './aor-pdf-template';
 import { documensoClient } from './documenso';
 import { db } from './db';
@@ -21,7 +22,7 @@ interface AORGenerationData {
 
 export class AORService {
   /**
-   * Genera un PDF de AOR para un cliente específico.
+   * Genera un PDF de AOR para un cliente específico de forma eficiente en el servidor.
    */
   static async generateAORPDF(data: AORGenerationData): Promise<Buffer> {
     const [customer, agent] = await Promise.all([
@@ -49,9 +50,19 @@ export class AORService {
       createdAt: new Date(),
     };
 
-    // FIX 1: Uso corregido de la función desde el objeto importado.
-    const pdfBuffer = await ReactPDF.renderToBuffer(AORTemplate({ data: aorData }));
-    return Buffer.from(pdfBuffer);
+    // --- CÓDIGO CORREGIDO ---
+    // Se usa renderToStream para un mejor rendimiento en el servidor.
+    const pdfStream = await ReactPDF.renderToStream(AORTemplate({ data: aorData }));
+
+    // Se convierte el stream resultante a un Buffer.
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Uint8Array[] = [];
+      pdfStream.on('data', (chunk) => chunks.push(chunk));
+      pdfStream.on('end', () => resolve(Buffer.concat(chunks)));
+      pdfStream.on('error', reject);
+    });
+
+    return pdfBuffer;
   }
 
   /**
@@ -73,8 +84,7 @@ export class AORService {
       console.log(`Enviando AOR a Documenso para la póliza ${data.policyId}...`);
 
       /*
-       * FIX 2 y 3:
-       * Se usa @ts-ignore porque la definición de tipos de Documenso es incorrecta (pide Buffer).
+       * Se usa @ts-ignore porque la definición de tipos de Documenso puede ser incorrecta (pide Buffer).
        * La API en realidad necesita una string en Base64, por lo que convertimos el buffer.
        */
       // @ts-ignore

@@ -1,18 +1,20 @@
-'use client'
 
 import { Document, Font, Page, StyleSheet, Text, View, Image } from '@react-pdf/renderer'
 import { formatDate } from '@/lib/utils'
+import path from 'path';
+
+const fontPath = path.join(process.cwd(), 'public', 'fonts');
 
 // Registrar fuentes
 Font.register({
   family: 'Inter',
   fonts: [
-    { src: '/fonts/Inter-Regular.ttf' },
-    { src: '/fonts/Inter-Medium.ttf', fontWeight: 500 },
-    { src: '/fonts/Inter-SemiBold.ttf', fontWeight: 600 },
-    { src: '/fonts/Inter-Bold.ttf', fontWeight: 700 }
+    { src: `${fontPath}/Inter-Regular.ttf` },
+    { src: `${fontPath}/Inter-Medium.ttf`, fontWeight: 500 },
+    { src: `${fontPath}/Inter-SemiBold.ttf`, fontWeight: 600 },
+    { src: `${fontPath}/Inter-Bold.ttf`, fontWeight: 700 }
   ]
-})
+});
 
 const styles = StyleSheet.create({
   page: {
