@@ -30,7 +30,7 @@ interface CreateDocumentRequest {
     name: string;
     role: 'SIGNER' | 'VIEWER' | 'APPROVER';
   }>;
-  documentBuffer: Buffer;
+  documentBuffer: string; // Expects a Base64 string
   fileName: string;
   templateId?: string;
   meta?: {
@@ -54,10 +54,9 @@ class DocumensoClient {
     this.baseUrl = DOCUMENSO_BASE_URL;
   }
 
-  // ✅ MÉTODO AUXILIAR RESTAURADO: Centraliza las peticiones a la API
   private async request(endpoint: string, options: RequestInit = {}) {
-    const url = `${this.baseUrl}/api/v1${endpoint}`; // Ruta base de la API v1
-    
+    const url = `${this.baseUrl}/api/v1${endpoint}`;
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -79,7 +78,11 @@ class DocumensoClient {
     const formData = new FormData();
     formData.append('title', request.title);
     formData.append('recipients', JSON.stringify(request.recipients));
-    formData.append('document', new Blob([request.documentBuffer]), request.fileName);
+    
+    const buffer = Buffer.from(request.documentBuffer, 'base64');
+    // MODIFIED: Create a new Uint8Array from the buffer to ensure it's a valid BlobPart.
+    formData.append('document', new Blob([new Uint8Array(buffer)]), request.fileName);
+    
     if (request.meta) {
       formData.append('meta', JSON.stringify(request.meta));
     }
@@ -89,7 +92,7 @@ class DocumensoClient {
 
     const response = await fetch(`${this.baseUrl}/api/v1/document`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${this.apiKey}` }, // No 'Content-Type' aquí, el navegador lo pone por FormData
+      headers: { 'Authorization': `Bearer ${this.apiKey}` },
       body: formData,
     });
 
@@ -104,13 +107,13 @@ class DocumensoClient {
   async sendDocument(documentId: string): Promise<DocumensoDocument> {
     return this.request(`/document/${documentId}/send`, { method: 'POST' });
   }
-  
+
   async createAndSendAorDocument(data: {
     title: string;
     policyId: string;
     customerId: string;
     recipient: { email: string; name: string };
-    documentBuffer: Buffer;
+    documentBuffer: string; // Expects a Base64 string
     fileName: string;
   }): Promise<DocumensoDocument> {
     const createdDocument = await this.createDocument({
@@ -127,20 +130,17 @@ class DocumensoClient {
     return this.sendDocument(createdDocument.id);
   }
 
-  // ✅ MÉTODO RESTAURADO
   async getDocument(documentId: string): Promise<DocumensoDocument> {
     return this.request(`/document/${documentId}`);
   }
 
-  // ✅ MÉTODO RESTAURADO
   async getDocumentRecipients(documentId: string): Promise<DocumensoRecipient[]> {
     return this.request(`/document/${documentId}/recipients`);
   }
 
-  // ✅ MÉTODO RESTAURADO DEL CÓDIGO ORIGINAL
   async createTemplate(templateData: {
     title: string;
-    documentBuffer: Buffer;
+    documentBuffer: string; // Expects a Base64 string
     fileName: string;
     fields: Array<{
       type: 'SIGNATURE' | 'DATE' | 'TEXT' | 'EMAIL' | 'NAME';
@@ -154,10 +154,14 @@ class DocumensoClient {
   }) {
     const formData = new FormData();
     formData.append('title', templateData.title);
-    formData.append('document', new Blob([templateData.documentBuffer]), templateData.fileName);
+    
+    const buffer = Buffer.from(templateData.documentBuffer, 'base64');
+    // MODIFIED: Create a new Uint8Array from the buffer to ensure it's a valid BlobPart.
+    formData.append('document', new Blob([new Uint8Array(buffer)]), templateData.fileName);
+    
     formData.append('fields', JSON.stringify(templateData.fields));
 
-    const response = await fetch(`${this.baseUrl}/api/v1/template`, { // Endpoint actualizado a v1
+    const response = await fetch(`${this.baseUrl}/api/v1/template`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -172,10 +176,9 @@ class DocumensoClient {
 
     return response.json();
   }
-  
-  // ✅ MÉTODO RESTAURADO DEL CÓDIGO ORIGINAL
+
   async listTemplates() {
-    return this.request('/template'); // Endpoint actualizado a v1
+    return this.request('/template');
   }
 }
 
