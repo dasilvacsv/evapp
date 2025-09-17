@@ -2,51 +2,43 @@
 
 /*
  * =================================================================
- * OBJETIVOS DEL MÓDULO: REPORTES Y DASHBOARDS
+ * CAMBIOS REALIZADOS:
+ * 1. **Nuevos Paneles**: Se añadió un panel para el rol `call_center`.
+ * 2. **Panel de Admin/Manager Mejorado**:
+ * - Se añadieron nuevas tarjetas (`StatCard`) para mostrar el "Seguimiento de Miembros"
+ * (semanal, quincenal, mensual).
+ * - La tabla de "Rendimiento del Equipo" ahora muestra un desglose detallado del
+ * estado de las pólizas de cada agente.
+ * 3. **Tipos e Iconos**: Se importaron los tipos y iconos necesarios para las
+ * nuevas funcionalidades (`Users2` para miembros).
  * =================================================================
- * * 1. Reportes y Dashboards:
- * - Crear un módulo de reportes que replique los informes de 
- * productividad de Excel. Esto implicará desarrollar una nueva 
- * sección o página (ej: /reports) con funcionalidades de 
- * filtrado avanzado (por fechas, agentes, equipos, etc.) y 
- * la capacidad de exportar los datos (ej: a CSV o PDF).
- * * 2. Vistas Jerárquicas en Dashboards:
- * - Diseñar dashboards con vistas jerárquicas: agentes ven sus 
- * datos, managers los de su equipo, y la dirección (super_admin)
- * ve el panorama completo.
- * - ESTADO ACTUAL: Esta funcionalidad ya está implementada.
- * El componente `DashboardContent` y la función `getDashboardStats`
- * trabajan juntos para filtrar los datos y renderizar el panel
- * adecuado según el rol del usuario que ha iniciado sesión.
- * * =================================================================
  */
 
 import { Suspense } from 'react';
 import { getDashboardStats } from './actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { Users, FileText, DollarSign, TrendingUp, ArrowUpRight, ArrowDownRight, PlusCircle, ArrowRight, UserCheck, Clock, FileWarning, Building } from 'lucide-react';
+import { Users, FileText, DollarSign, TrendingUp, PlusCircle, ArrowRight, UserCheck, Clock, FileWarning, Building, Users2, PhoneCall } from 'lucide-react';
 import { formatCurrency, cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
-import { type TeamPerformance } from './actions'; // Importa el tipo TeamPerformance
+import { type TeamPerformance } from './actions';
 
 // --- Mapeo de Estados (sin cambios) ---
 const statusConfig = {
-  'new_lead': { label: 'Lead Nuevo', color: 'bg-blue-500' },
-  'contacting': { label: 'Contactando', color: 'bg-yellow-500' },
-  'info_captured': { label: 'Info. Capturada', color: 'bg-purple-500' },
-  'in_review': { label: 'En Revisión', color: 'bg-orange-500' },
-  'missing_docs': { label: 'Faltan Docs', color: 'bg-red-600' },
-  'sent_to_carrier': { label: 'En Aseguradora', color: 'bg-indigo-500' },
-  'approved': { label: 'Aprobada', color: 'bg-green-500' },
-  'rejected': { label: 'Rechazada', color: 'bg-destructive' },
-  'active': { label: 'Activa', color: 'bg-emerald-500' },
-  'cancelled': { label: 'Cancelada', color: 'bg-gray-500' },
-};
+    'new_lead': { label: 'Lead Nuevo', color: 'bg-blue-500' },
+    'contacting': { label: 'Contactando', color: 'bg-yellow-500' },
+    'info_captured': { label: 'Info. Capturada', color: 'bg-purple-500' },
+    'in_review': { label: 'En Revisión', color: 'bg-orange-500 text-white' },
+    'missing_docs': { label: 'Faltan Docs', color: 'bg-red-600 text-white' },
+    'sent_to_carrier': { label: 'En Aseguradora', color: 'bg-indigo-500 text-white' },
+    'approved': { label: 'Aprobada', color: 'bg-green-600 text-white' },
+    'rejected': { label: 'Rechazada', color: 'bg-destructive text-destructive-foreground' },
+    'active': { label: 'Activa', color: 'bg-emerald-500 text-white' },
+    'cancelled': { label: 'Cancelada', color: 'bg-gray-500 text-white' },
+  };
 
 // --- COMPONENTE PRINCIPAL DEL DASHBOARD ---
 export default function DashboardPage() {
@@ -70,6 +62,7 @@ async function DashboardContent() {
     processor: <ProcessorDashboard stats={stats} />,
     commission_analyst: <CommissionAnalystDashboard stats={stats} />,
     customer_service: <CustomerServiceDashboard stats={stats} />,
+    call_center: <CallCenterDashboard stats={stats} />, // NUEVO: Panel para Call Center
   };
 
   return roleDashboardMap[stats.userRole as keyof typeof roleDashboardMap] || <DefaultDashboard stats={stats} />;
@@ -79,39 +72,45 @@ async function DashboardContent() {
 
 // Panel para Super Admin y Manager
 function AdminManagerDashboard({ stats, title }: { stats: Awaited<ReturnType<typeof getDashboardStats>>, title: string }) {
-  const teamPerformance = stats.teamPerformance as TeamPerformance[]; // Asegura el tipo aquí
+  const teamPerformance = stats.teamPerformance as TeamPerformance[];
 
   return (
     <>
-      <DashboardHeader title={title} buttonLabel="Gestionar Equipo" buttonHref="/team" />
+      <DashboardHeader title={title} buttonLabel="Crear Reporte" buttonHref="/reports" />
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Clientes del Equipo" value={stats.totalCustomers} icon={Users} />
-        <StatCard title="Pólizas del Equipo" value={stats.totalPolicies} icon={FileText} />
-        {stats.userRole === 'super_admin' && <StatCard title="Comisiones Totales" value={formatCurrency(Number(stats.totalCommissions))} icon={DollarSign} />}
+        <StatCard title="Clientes Totales" value={stats.totalCustomers} icon={Users} />
+        <StatCard title="Pólizas Totales" value={stats.totalPolicies} icon={FileText} />
+        <StatCard title="Miembros (Mes)" value={stats.memberTracking.monthly} icon={Users2} description="Titulares + Dependientes" />
         <StatCard title="Pólizas Activas" value={stats.policyStatusCounts.find(s => s.status === 'active')?.count || 0} icon={TrendingUp} />
       </div>
       <Card className="card-shadow">
         <CardHeader>
           <CardTitle>Rendimiento del Equipo</CardTitle>
-          <CardDescription>Métricas clave de los agentes bajo tu supervisión.</CardDescription>
+          <CardDescription>Métricas clave y desglose de pólizas por estado para cada agente.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nombre del Agente</TableHead>
-                <TableHead>Pólizas Creadas</TableHead>
-                <TableHead>Pólizas Activas</TableHead>
-                <TableHead>Clientes Creados</TableHead>
+                <TableHead>Agente</TableHead>
+                <TableHead className="text-center">Clientes</TableHead>
+                <TableHead className="text-center">Pólizas Totales</TableHead>
+                <TableHead className="text-center">Activas</TableHead>
+                <TableHead className="text-center">Aprobadas</TableHead>
+                <TableHead className="text-center">En Revisión</TableHead>
+                <TableHead className="text-center">Faltan Docs</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {teamPerformance.map(agent => (
                 <TableRow key={agent.agentId}>
                   <TableCell className="font-medium">{agent.agentName}</TableCell>
-                  <TableCell>{agent.totalPolicies}</TableCell>
-                  <TableCell>{agent.activePolicies}</TableCell>
-                  <TableCell>{agent.totalCustomers}</TableCell>
+                  <TableCell className="text-center">{agent.totalCustomers}</TableCell>
+                  <TableCell className="text-center font-bold">{agent.totalPolicies}</TableCell>
+                  <TableCell className="text-center"><Badge className={`${statusConfig.active.color}`}>{agent.statusBreakdown.active}</Badge></TableCell>
+                  <TableCell className="text-center"><Badge className={`${statusConfig.approved.color}`}>{agent.statusBreakdown.approved}</Badge></TableCell>
+                  <TableCell className="text-center"><Badge className={`${statusConfig.in_review.color}`}>{agent.statusBreakdown.in_review}</Badge></TableCell>
+                  <TableCell className="text-center"><Badge className={`${statusConfig.missing_docs.color}`}>{agent.statusBreakdown.missing_docs}</Badge></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -150,6 +149,29 @@ function AgentDashboard({ stats }: { stats: Awaited<ReturnType<typeof getDashboa
   );
 }
 
+// NUEVO: Panel para Call Center
+function CallCenterDashboard({ stats }: { stats: Awaited<ReturnType<typeof getDashboardStats>> }) {
+    return (
+      <>
+        <DashboardHeader title="Panel de Call Center" buttonLabel="Añadir Cliente" buttonHref="/customers/new" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <StatCard title="Leads Asignados" value={stats.totalCustomers} icon={PhoneCall} />
+          <StatCard title="Pólizas Generadas" value={stats.totalPolicies} icon={FileText} />
+          <StatCard title="Pólizas Activas" value={stats.policyStatusCounts.find(s => s.status === 'active')?.count || 0} icon={TrendingUp} />
+        </div>
+        <Card className="card-shadow">
+          <CardHeader>
+            <CardTitle>Actividad Reciente</CardTitle>
+            <CardDescription>Últimas pólizas generadas a partir de tus leads.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RecentPoliciesTable policies={stats.recentPolicies} />
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
+
 // Panel para Analista de Comisiones
 function CommissionAnalystDashboard({ stats }: { stats: Awaited<ReturnType<typeof getDashboardStats>> }) {
   return (
@@ -157,8 +179,8 @@ function CommissionAnalystDashboard({ stats }: { stats: Awaited<ReturnType<typeo
       <DashboardHeader title="Panel de Comisiones" buttonLabel="Gestionar Comisiones" buttonHref="/commissions" />
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <StatCard title="Comisiones Totales" value={formatCurrency(Number(stats.totalCommissions))} icon={DollarSign} />
-        <StatCard title="Pólizas Aprobadas" value={stats.policyStatusCounts.find(s => s.status === 'approved')?.count || 0} icon={UserCheck} />
-        <StatCard title="Lotes Pendientes" value={3} icon={Clock} />
+        <StatCard title="Pólizas por Calcular" value={stats.policyStatusCounts.find(s => s.status === 'approved')?.count || 0} icon={Clock} />
+        <StatCard title="Lotes Pendientes" value={3} icon={FileWarning} />
       </div>
       <Card><CardHeader><CardTitle>Lotes de Comisiones Recientes</CardTitle></CardHeader></Card>
     </>
@@ -232,17 +254,20 @@ function DashboardHeader({ title, buttonLabel, buttonHref }: { title: string; bu
   );
 }
 
-function StatCard({ title, value, icon: Icon }: { title: string; value: string | number; icon: React.ElementType; }) {
-  return (
-    <Card className="card-shadow transition-transform hover:-translate-y-1">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10"><Icon className="h-4 w-4 text-primary" /></div>
-      </CardHeader>
-      <CardContent><div className="text-2xl font-bold text-foreground">{value}</div></CardContent>
-    </Card>
-  );
-}
+function StatCard({ title, value, icon: Icon, description }: { title: string; value: string | number; icon: React.ElementType; description?: string }) {
+    return (
+      <Card className="card-shadow transition-transform hover:-translate-y-1">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+          <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10"><Icon className="h-4 w-4 text-primary" /></div>
+        </CardHeader>
+        <CardContent>
+            <div className="text-2xl font-bold text-foreground">{value}</div>
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        </CardContent>
+      </Card>
+    );
+  }
 
 function RecentPoliciesTable({ policies }: { policies: Awaited<ReturnType<typeof getDashboardStats>>['recentPolicies'] }) {
   return (
@@ -254,7 +279,11 @@ function RecentPoliciesTable({ policies }: { policies: Awaited<ReturnType<typeof
             <TableCell className="font-medium">{policy.customerName}</TableCell>
             <TableCell className="text-muted-foreground">{policy.insuranceCompany || 'N/A'}</TableCell>
             <TableCell className="text-right font-mono">{policy.monthlyPremium ? formatCurrency(Number(policy.monthlyPremium)) : '-'}</TableCell>
-            <TableCell className="text-center"><Badge variant="outline" className="font-semibold">{statusConfig[policy.status as keyof typeof statusConfig]?.label || 'Desconocido'}</Badge></TableCell>
+            <TableCell className="text-center">
+                <Badge className={cn('font-semibold', statusConfig[policy.status as keyof typeof statusConfig]?.color)}>
+                {statusConfig[policy.status as keyof typeof statusConfig]?.label || 'Desconocido'}
+                </Badge>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>

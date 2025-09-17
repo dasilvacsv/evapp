@@ -1,16 +1,31 @@
-'use client'; 
+'use client';
+
+// =================================================================
+// CAMBIOS REALIZADOS:
+// 1. **Aprobación de Lotes**: Se añadió una columna "Acciones" en la tabla de lotes.
+//    - Aparece un botón "Aprobar" para los lotes con estado 'PENDING_APPROVAL'.
+//    - Se requiere rol de 'manager' o 'super_admin' (la lógica está en el backend, aquí se muestra a todos los que pueden ver la tabla).
+// 2. **Manejo de Estado**: Se implementó un estado para la carga (`isApproving`) y para
+//    mostrar notificaciones de éxito o error al aprobar.
+// 3. **Función de Aprobación**: `handleApproveBatch` se encarga de llamar a la server action
+//    `approveCommissionBatch` y actualizar la UI.
+// 4. **Importaciones**: Se importó `useSession` para verificar el rol del usuario y `Alert`
+//    para las notificaciones.
+// =================================================================
 
 import { useState, useEffect } from 'react';
-import { getCommissionablePolicies, getCommissionBatches, getCommissionStats } from './actions';
+import { useSession } from 'next-auth/react';
+import { getCommissionablePolicies, getCommissionBatches, getCommissionStats, approveCommissionBatch } from './actions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { Calculator, DollarSign, Clock, CheckCircle, ArrowRight, Wallet, TrendingUp } from 'lucide-react';
+import { Calculator, DollarSign, Clock, CheckCircle, Wallet, TrendingUp, Check, Loader2, XCircle, ShieldCheck } from 'lucide-react';
 import CommissionCalculator from './components/commission-calculator';
 
 interface Policy {
@@ -19,8 +34,8 @@ interface Policy {
   agentName: string;
   insuranceCompany: string;
   monthlyPremium: number;
-  marketplaceId?: string; // Cambiado de policyNumber
-  planName?: string; // Nuevo campo
+  marketplaceId?: string;
+  planName?: string;
   taxCredit?: number;
   effectiveDate?: string;
 }
@@ -58,6 +73,8 @@ const getBatchStatusColor = (status: string) => {
 };
 
 export default function CommissionsPage({ searchParams }: PageProps) {
+  const { data: session } = useSession(); // Hook para obtener la sesión del usuario
+  const userRole = session?.user?.role;
   const page = Number(searchParams.page) || 1;
   const search = searchParams.search || '';
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -67,24 +84,30 @@ export default function CommissionsPage({ searchParams }: PageProps) {
   const [selectedPolicies, setSelectedPolicies] = useState<Policy[]>([]);
   const [allSelected, setAllSelected] = useState(false);
 
+  // NUEVO: Estados para manejar la aprobación de lotes
+  const [isApproving, setIsApproving] = useState<string | null>(null); // Guarda el ID del lote que se está aprobando
+  const [approvalStatus, setApprovalStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    const [policiesData, batchesData, statsData] = await Promise.all([
+      getCommissionablePolicies(page, 50, search),
+      getCommissionBatches(1, 10),
+      getCommissionStats(),
+    ]);
+    setPolicies(policiesData.policies);
+    setBatches(batchesData.batches);
+    setStats(statsData);
+    setIsLoading(false);
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      const [policiesData, batchesData, statsData] = await Promise.all([
-        getCommissionablePolicies(page, 50, search),
-        getCommissionBatches(1, 10),
-        getCommissionStats(),
-      ]);
-      setPolicies(policiesData.policies);
-      setBatches(batchesData.batches);
-      setStats(statsData);
-      setIsLoading(false);
-    };
     fetchData();
   }, [page, search]);
 
   const handleSelectPolicy = (policy: Policy, isChecked: boolean) => {
-    setSelectedPolicies(prev => 
+    setSelectedPolicies(prev =>
       isChecked ? [...prev, policy] : prev.filter(p => p.id !== policy.id)
     );
   };
@@ -95,6 +118,26 @@ export default function CommissionsPage({ searchParams }: PageProps) {
   };
 
   const isPolicySelected = (policyId: string) => selectedPolicies.some(p => p.id === policyId);
+
+  // NUEVO: Función para manejar la aprobación de un lote
+  const handleApproveBatch = async (batchId: string) => {
+    setIsApproving(batchId);
+    setApprovalStatus(null);
+    try {
+      const result = await approveCommissionBatch(batchId);
+      if (result.success) {
+        setApprovalStatus({ type: 'success', message: '¡Lote aprobado exitosamente!' });
+        await fetchData(); // Recargar los datos para ver el cambio de estado
+      } else {
+        throw new Error(result.message || 'Error desconocido');
+      }
+    } catch (error: any) {
+      setApprovalStatus({ type: 'error', message: error.message || 'No se pudo aprobar el lote.' });
+    } finally {
+      setIsApproving(null);
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -207,9 +250,9 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[50px]">
-                        <Checkbox 
-                          checked={allSelected} 
-                          onCheckedChange={(checked) => handleSelectAll(checked as boolean)} 
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
                         />
                       </TableHead>
                       <TableHead>Cliente</TableHead>
@@ -224,14 +267,14 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                   </TableHeader>
                   <TableBody>
                     {policies.map((policy) => (
-                      <TableRow 
-                        key={policy.id} 
+                      <TableRow
+                        key={policy.id}
                         className={isPolicySelected(policy.id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}
                       >
                         <TableCell>
-                          <Checkbox 
-                            checked={isPolicySelected(policy.id)} 
-                            onCheckedChange={(checked) => handleSelectPolicy(policy, checked as boolean)} 
+                          <Checkbox
+                            checked={isPolicySelected(policy.id)}
+                            onCheckedChange={(checked) => handleSelectPolicy(policy, checked as boolean)}
                           />
                         </TableCell>
                         <TableCell className="font-medium text-gray-900">{policy.customerName}</TableCell>
@@ -262,9 +305,18 @@ export default function CommissionsPage({ searchParams }: PageProps) {
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold tracking-tight">Historial de Lotes</h2>
-              <p className="text-sm text-gray-500 mt-1">Revisa el estado de todos los lotes de pago de comisiones.</p>
+              <p className="text-sm text-gray-500 mt-1">Revisa y aprueba los lotes de pago de comisiones.</p>
             </div>
           </div>
+            
+          {/* NUEVO: Contenedor para notificaciones de aprobación */}
+          {approvalStatus && (
+            <Alert variant={approvalStatus.type === 'error' ? 'destructive' : 'default'} className={approvalStatus.type === 'success' ? 'bg-green-50 border-green-300' : ''}>
+              {approvalStatus.type === 'success' ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              <AlertTitle>{approvalStatus.type === 'success' ? 'Éxito' : 'Error'}</AlertTitle>
+              <AlertDescription>{approvalStatus.message}</AlertDescription>
+            </Alert>
+          )}
 
           <Card className="shadow-lg border-gray-100">
             <CardHeader className="bg-gray-50 rounded-t-lg p-4">
@@ -288,6 +340,10 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                       <TableHead>Creado Por</TableHead>
                       <TableHead className="text-right">Monto Total</TableHead>
                       <TableHead className="text-right">Fecha de Creación</TableHead>
+                      {/* NUEVO: Columna de Acciones para Aprobación */}
+                      {(userRole === 'super_admin' || userRole === 'manager') && (
+                          <TableHead className="text-center">Acciones</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -307,6 +363,27 @@ export default function CommissionsPage({ searchParams }: PageProps) {
                         <TableCell className="text-right text-gray-500">
                           {formatDate(batch.createdAt)}
                         </TableCell>
+                         {/* NUEVO: Celda con el botón de Aprobación */}
+                        {(userRole === 'super_admin' || userRole === 'manager') && (
+                            <TableCell className="text-center">
+                            {batch.status === 'pending_approval' && (
+                                <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-green-600 text-green-700 hover:bg-green-50 hover:text-green-800"
+                                onClick={() => handleApproveBatch(batch.id)}
+                                disabled={isApproving === batch.id}
+                                >
+                                {isApproving === batch.id ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <ShieldCheck className="mr-2 h-4 w-4" />
+                                )}
+                                Aprobar
+                                </Button>
+                            )}
+                            </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
