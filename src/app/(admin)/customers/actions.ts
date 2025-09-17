@@ -1133,3 +1133,63 @@ export async function getTeamUsers() {
     throw new Error("No se pudieron obtener los usuarios.");
   }
 }
+
+const allowedStatuses = policyStatusEnum.enumValues;
+
+export async function updatePolicyStatus(policyId: string, newStatus: string) {
+    // --> 1. Obtener la sesión del usuario
+    const session = await auth();
+    const user = session?.user;
+
+    // --> 2. Validar que el usuario esté autenticado
+    if (!user?.id || !user.role) {
+        return { success: false, message: 'No autenticado.' };
+    }
+
+    // --> 3. Definir qué roles tienen permiso para cambiar el estado de una póliza
+    const authorizedRoles = ['super_admin', 'manager', 'processor']; // <-- AJUSTA ESTOS ROLES SEGÚN NECESITES
+    
+    if (!authorizedRoles.includes(user.role)) {
+        return { success: false, message: 'No tienes permiso para cambiar el estado de las pólizas.' };
+    }
+
+    // --> 4. Obtener la póliza y el cliente para verificar la propiedad
+    const policy = await db.query.policies.findFirst({
+        where: eq(policies.id, policyId),
+        with: {
+            customer: true,
+        },
+    });
+
+    if (!policy || !policy.customer) {
+        return { success: false, message: "Póliza o cliente no encontrado." };
+    }
+
+    // --> 5. Usar tu propia función para asegurar que el usuario tenga acceso a este cliente específico
+    if (!canAccessCustomerDetails(user, policy.customer)) {
+        return { success: false, message: "No tienes acceso a esta póliza." };
+    }
+
+    // El resto de la lógica se mantiene, ahora protegida por las validaciones anteriores
+    const allowedStatuses = policyStatusEnum.enumValues;
+    if (!allowedStatuses.includes(newStatus as any)) {
+        return { success: false, message: 'Estado no válido.' };
+    }
+
+    try {
+        await db.update(policies)
+            .set({
+                status: newStatus as typeof policyStatusEnum.enumValues[number],
+                updatedAt: new Date(), // Actualiza la fecha de modificación
+            })
+            .where(eq(policies.id, policyId));
+
+        revalidatePath('/customers'); // Invalida el caché de la página para que se actualice
+        revalidatePath('/post-venta'); // También es buena idea revalidar esta ruta
+
+        return { success: true };
+    } catch (error) {
+        console.error("Error al actualizar el estado de la póliza:", error);
+        return { success: false, message: 'No se pudo actualizar la póliza.' };
+    }
+}
