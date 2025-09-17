@@ -9,11 +9,10 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlusCircle, MoreHorizontal, UserX, ChevronLeft, ChevronRight, CalendarPlus, ShieldAlert, Trello, FileText } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, UserX, ChevronLeft, ChevronRight, Trello, FileText, ShieldAlert } from 'lucide-react'; // <-- Se agregó ShieldAlert
 import { formatDate } from '@/lib/utils';
 import Link from 'next/link';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { policyStatusEnum } from '@/db/schema';
 import PostVentaModule from './components/post-venta-module';
 import PostVentaTrelloBoard from './components/post-venta-trello-board';
 import DocumentTemplatesManager from './components/document-templates-manager';
@@ -110,91 +109,155 @@ export default function CustomersPage({ searchParams }: PageProps) {
   );
 }
 
+// =================================================================
+// COMPONENTES MODIFICADOS CON MANEJO DE ERRORES
+// =================================================================
+
 async function CustomersTable({ page, search }: { page: number, search: string }) {
-  const { customers, pagination } = await getCachedCustomers(page, 10, search);
+  try {
+    const { customers, pagination } = await getCachedCustomers(page, 10, search);
 
-  if (customers.length === 0) {
-    return <EmptyState search={search} />;
-  }
-  
-  return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Estado Última Póliza</TableHead>
-              <TableHead>Agente Creador</TableHead>
-              <TableHead>Fecha de Creación</TableHead>
-              <TableHead>Estado de Procesamiento</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {customers.map((customer) => {
-              const initials = customer.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-              const latestPolicyStatus = customer.policies[0]?.status;
-              const agentName = customer.createdByAgent.name || 
-                `${customer.createdByAgent.firstName} ${customer.createdByAgent.lastName}`;
+    if (customers.length === 0) {
+      return <EmptyState search={search} />;
+    }
+    
+    return (
+      <div className="space-y-4">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Estado Última Póliza</TableHead>
+                <TableHead>Agente Creador</TableHead>
+                <TableHead>Fecha de Creación</TableHead>
+                <TableHead>Estado de Procesamiento</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {customers.map((customer) => {
+                const initials = customer.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                const latestPolicyStatus = customer.policies[0]?.status;
+                const agentName = customer.createdByAgent.name || 
+                  `${customer.createdByAgent.firstName} ${customer.createdByAgent.lastName}`;
 
-              return (
-                <TableRow key={customer.id} className="hover:bg-muted/50">
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>{initials}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <Link href={`/customers/${customer.id}`} className="font-medium text-primary hover:underline">
-                          {customer.fullName}
-                        </Link>
-                        <p className="text-sm text-muted-foreground">{customer.email}</p>
+                return (
+                  <TableRow key={customer.id} className="hover:bg-muted/50">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar>
+                          <AvatarFallback>{initials}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <Link href={`/customers/${customer.id}`} className="font-medium text-primary hover:underline">
+                            {customer.fullName}
+                          </Link>
+                          <p className="text-sm text-muted-foreground">{customer.email}</p>
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {latestPolicyStatus ? 
-                      <Badge variant="outline">{latestPolicyStatus.replace('_', ' ')}</Badge> : 
-                      <Badge variant="secondary">Sin Póliza</Badge>
-                    }
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {agentName}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDate(customer.createdAt)}</TableCell>
-                  <TableCell>
-                    {customer.processingStartedAt ? 
-                      <Badge variant="outline" className="bg-blue-100 text-blue-800">En Procesamiento</Badge> : 
-                      <Badge variant="secondary">Pre-Procesamiento</Badge>
-                    }
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link href={`/customers/${customer.id}`} className="cursor-pointer">Ver Detalles</Link>
-                        </DropdownMenuItem>
-                        {!customer.processingStartedAt && (
+                    </TableCell>
+                    <TableCell>
+                      {latestPolicyStatus ? 
+                        <Badge variant="outline">{latestPolicyStatus.replace('_', ' ')}</Badge> : 
+                        <Badge variant="secondary">Sin Póliza</Badge>
+                      }
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {agentName}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(customer.createdAt)}</TableCell>
+                    <TableCell>
+                      {customer.processingStartedAt ? 
+                        <Badge variant="outline" className="bg-blue-100 text-blue-800">En Procesamiento</Badge> : 
+                        <Badge variant="secondary">Pre-Procesamiento</Badge>
+                      }
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link href={`/customers/${customer.id}/tasks`} className="cursor-pointer">
-                              Gestionar Tareas
-                            </Link>
+                            <Link href={`/customers/${customer.id}`} className="cursor-pointer">Ver Detalles</Link>
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                          {!customer.processingStartedAt && (
+                            <DropdownMenuItem asChild>
+                              <Link href={`/customers/${customer.id}/tasks`} className="cursor-pointer">
+                                Gestionar Tareas
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        <PaginationControls {...pagination} search={search} />
       </div>
-      <PaginationControls {...pagination} search={search} />
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('autorizado')) {
+      return <UnauthorizedMessage />;
+    }
+    throw error;
+  }
+}
+
+async function PostVentaModuleWrapper() {
+  try {
+    const policiesByStatus = await getCachedPoliciesForBoard();
+    return <PostVentaModule policiesByStatus={policiesByStatus} />;
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('autorizado')) {
+      return <UnauthorizedMessage />;
+    }
+    throw error;
+  }
+}
+
+async function TrelloBoardWrapper() {
+  try {
+    const tasksByColumn = await getCachedPostSaleTasks();
+    return <PostVentaTrelloBoard tasksByColumn={tasksByColumn} />;
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('autorizado')) {
+      return <UnauthorizedMessage />;
+    }
+    throw error;
+  }
+}
+
+async function TemplatesWrapper() {
+  try {
+    const templates = await getCachedDocumentTemplates();
+    return <DocumentTemplatesManager templates={templates} />;
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('autorizado')) {
+      return <UnauthorizedMessage />;
+    }
+    throw error;
+  }
+}
+
+// =================================================================
+// COMPONENTES DE UI Y ESTADOS
+// =================================================================
+
+function UnauthorizedMessage() {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 bg-red-50 border border-red-200 rounded-lg mt-4">
+      <ShieldAlert className="h-16 w-16 text-red-500 mb-4" />
+      <h3 className="text-xl font-semibold text-red-800">Acceso Denegado</h3>
+      <p className="text-red-700 mt-2 max-w-md">
+        Tu rol actual no tiene los permisos necesarios para ver este contenido. 
+        Por favor, contacta a un administrador si crees que esto es un error.
+      </p>
     </div>
   );
 }
@@ -230,6 +293,10 @@ function EmptyState({ search }: { search: string }) {
   );
 }
 
+// =================================================================
+// SKELETONS (Sin cambios)
+// =================================================================
+
 function CustomersTableSkeleton() {
   const skeletonRows = 5;
   return (
@@ -263,22 +330,6 @@ function CustomersTableSkeleton() {
   );
 }
 
-// --- NUEVOS COMPONENTES DE SERVIDOR (Wrappers) ---
-async function PostVentaModuleWrapper() {
-  const policiesByStatus = await getCachedPoliciesForBoard();
-  return <PostVentaModule policiesByStatus={policiesByStatus} />;
-}
-
-async function TrelloBoardWrapper() {
-  const tasksByColumn = await getCachedPostSaleTasks();
-  return <PostVentaTrelloBoard tasksByColumn={tasksByColumn} />;
-}
-
-async function TemplatesWrapper() {
-  const templates = await getCachedDocumentTemplates();
-  return <DocumentTemplatesManager templates={templates} />;
-}
-
 function PolicyBoardSkeleton() {
     const columns = 5;
     const cardsPerColumn = 2;
@@ -291,15 +342,15 @@ function PolicyBoardSkeleton() {
                         <Skeleton className="h-5 w-8" />
                     </div>
                     {Array.from({ length: cardsPerColumn }).map((_, j) => (
-                           <Card key={j}>
-                               <CardHeader className="p-4 space-y-2">
-                                   <Skeleton className="h-4 w-4/5"/>
-                                   <Skeleton className="h-3 w-3/5"/>
-                               </CardHeader>
-                               <CardFooter className="p-4 pt-0">
-                                   <Skeleton className="h-3 w-1/2"/>
-                               </CardFooter>
-                           </Card>
+                            <Card key={j}>
+                                <CardHeader className="p-4 space-y-2">
+                                    <Skeleton className="h-4 w-4/5"/>
+                                    <Skeleton className="h-3 w-3/5"/>
+                                </CardHeader>
+                                <CardFooter className="p-4 pt-0">
+                                    <Skeleton className="h-3 w-1/2"/>
+                                </CardFooter>
+                            </Card>
                     ))}
                 </div>
             ))}
