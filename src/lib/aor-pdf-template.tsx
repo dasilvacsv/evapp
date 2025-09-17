@@ -333,7 +333,7 @@ export function AORTemplate({ data }: { data: AORData }) {
         <View style={styles.footer}>
           <Text>
             Este documento fue generado automáticamente el {formatDate(currentDate)}.{'\n'}
-            Para cualquier consulta, contacte a MULTISERVICE JAD 5000 C.A.
+            Para cualquier consulta, contacte a EV FINANCIAL.
           </Text>
         </View>
       </Page>
