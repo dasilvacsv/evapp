@@ -12,6 +12,7 @@ import {
   pgEnum,
   primaryKey,
   integer,
+  json, // Añadido para documentAuditLog
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { AdapterAccount } from "next-auth/adapters";
@@ -25,7 +26,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "processor",
   "commission_analyst",
   "customer_service",
-  "call_center", // NUEVO: Rol Call Center
+  "call_center",
 ]);
 
 export const policyStatusEnum = pgEnum("policy_status", [
@@ -54,7 +55,6 @@ export const paymentMethodTypeEnum = pgEnum("payment_method_type", ["debit_card"
 export const appointmentStatusEnum = pgEnum("appointment_status", ["scheduled", "completed", "cancelled", "rescheduled"]);
 export const claimStatusEnum = pgEnum("claim_status", ["submitted", "in_review", "information_requested", "approved", "denied"]);
 
-// NUEVOS ENUMS PARA TAREAS Y PLANTILLAS
 export const taskStatusEnum = pgEnum("task_status", [
   "pending", "in_progress", "completed", "cancelled", "on_hold"
 ]);
@@ -71,31 +71,21 @@ export const templateTypeEnum = pgEnum("template_type", [
   "income_letter", "coverage_confirmation", "renewal_notice", "birthday_greeting", "address_change_confirmation", "general_correspondence"
 ]);
 
-// --- TABLAS EXISTENTES ---
+// --- NUEVOS ENUMS PARA FIRMA ELECTRÓNICA ---
+export const documentStatusEnum = pgEnum("document_status", [
+  "draft", "sent", "opened", "partially_signed", "completed", "cancelled", "expired"
+]);
 
-export const appointments = pgTable("appointments", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
-    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }),
-    appointmentDate: timestamp("appointment_date").notNull(),
-    notes: text("notes"),
-    status: appointmentStatusEnum("status").notNull().default("scheduled"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const signerStatusEnum = pgEnum("signer_status", [
+  "pending", "viewed", "signed", "declined"
+]);
 
-export const claims = pgTable("claims", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
-    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    claimNumber: varchar("claim_number", { length: 100 }),
-    description: text("description").notNull(),
-    dateFiled: date("date_filed").notNull(),
-    status: claimStatusEnum("status").notNull().default("submitted"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const fieldTypeEnum = pgEnum("field_type", [
+  "signature", "date", "text", "email", "name", "initial", "checkbox"
+]);
+
+
+// --- TABLAS PRINCIPALES ---
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -108,9 +98,9 @@ export const users = pgTable("users", {
   image: text("image"),
   role: userRoleEnum("role").notNull().default('agent'),
   managerId: uuid("manager_id").references((): any => users.id, { onDelete: "set null" }),
-  assignedAgentId: uuid("assigned_agent_id").references((): any => users.id, { onDelete: "set null" }), // NUEVO: Para Call Center
+  assignedAgentId: uuid("assigned_agent_id").references((): any => users.id, { onDelete: "set null" }),
   isActive: boolean("is_active").default(true).notNull(),
-  canDownload: boolean("can_download").default(true).notNull(), // NUEVO: Permiso de descarga
+  canDownload: boolean("can_download").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -151,7 +141,7 @@ export const customers = pgTable("customers", {
   declaresOtherPeople: boolean("declares_other_people").default(false),
   
   createdByAgentId: uuid("created_by_agent_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  processingStartedAt: timestamp("processing_started_at"), // NUEVO: Para controlar acceso
+  processingStartedAt: timestamp("processing_started_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -169,7 +159,7 @@ export const policies = pgTable("policies", {
   planLink: text("plan_link"),
   taxCredit: decimal("tax_credit", { precision: 10, scale: 2 }),
   aorLink: text("aor_link"),
-  aorDocumentId: varchar("aor_document_id", { length: 100 }), // NUEVO: ID de Documenso
+  aorDocumentId: varchar("aor_document_id", { length: 100 }),
   notes: text("notes"),
 
   assignedProcessorId: uuid("assigned_processor_id").references(() => users.id, { onDelete: "set null" }),
@@ -178,6 +168,74 @@ export const policies = pgTable("policies", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const dependents = pgTable("dependents", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    fullName: varchar("full_name", { length: 255 }).notNull(),
+    relationship: varchar("relationship", { length: 100 }),
+    birthDate: date("birth_date"),
+    immigrationStatus: immigrationStatusEnum("immigration_status"),
+    immigrationStatusOther: text("immigration_status_other"),
+    appliesToPolicy: boolean("applies_to_policy").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const documents = pgTable("documents", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    policyId: uuid("policy_id").references(() => policies.id, { onDelete: "set null" }),
+    s3Key: text("s3_key").notNull().unique(),
+    dependentId: uuid("dependent_id").references(() => dependents.id, { onDelete: "set null" }),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    fileType: varchar("file_type", { length: 100 }).notNull(),
+    fileSize: integer("file_size").notNull(),
+    uploadedByUserId: uuid("uploaded_by_user_id").notNull().references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+
+// --- TABLAS DE SOPORTE Y GESTIÓN ---
+
+export const appointments = pgTable("appointments", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }),
+    appointmentDate: timestamp("appointment_date").notNull(),
+    notes: text("notes"),
+    status: appointmentStatusEnum("status").notNull().default("scheduled"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const claims = pgTable("claims", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+    claimNumber: varchar("claim_number", { length: 100 }),
+    description: text("description").notNull(),
+    dateFiled: date("date_filed").notNull(),
+    status: claimStatusEnum("status").notNull().default("submitted"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const paymentMethods = pgTable("payment_methods", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
+    methodType: paymentMethodTypeEnum("method_type").notNull(),
+    provider: varchar("provider", { length: 50 }),
+    providerToken: text("provider_token").notNull().unique(),
+    cardBrand: varchar("card_brand", { length: 50 }),
+    cardLast4: varchar("card_last_4", { length: 4 }),
+    cardExpiration: varchar("card_expiration", { length: 7 }),
+    bankName: varchar("bank_name", { length: 100 }),
+    accountLast4: varchar("account_last_4", { length: 4 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// --- TABLAS DE COMISIONES ---
 
 export const processorManagerAssignments = pgTable("processor_manager_assignments", {
   processorId: uuid("processor_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -205,46 +263,8 @@ export const commissionRecords = pgTable("commission_records", {
   paymentBatchId: uuid("payment_batch_id").references(() => commissionBatches.id, { onDelete: "cascade" }),
 });
 
-export const dependents = pgTable("dependents", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    fullName: varchar("full_name", { length: 255 }).notNull(),
-    relationship: varchar("relationship", { length: 100 }),
-    birthDate: date("birth_date"),
-    immigrationStatus: immigrationStatusEnum("immigration_status"),
-    immigrationStatusOther: text("immigration_status_other"),
-    appliesToPolicy: boolean("applies_to_policy").default(true),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-});
 
-export const paymentMethods = pgTable("payment_methods", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    policyId: uuid("policy_id").notNull().references(() => policies.id, { onDelete: "cascade" }),
-    methodType: paymentMethodTypeEnum("method_type").notNull(),
-    provider: varchar("provider", { length: 50 }),
-    providerToken: text("provider_token").notNull().unique(),
-    cardBrand: varchar("card_brand", { length: 50 }),
-    cardLast4: varchar("card_last_4", { length: 4 }),
-    cardExpiration: varchar("card_expiration", { length: 7 }),
-    bankName: varchar("bank_name", { length: 100 }),
-    accountLast4: varchar("account_last_4", { length: 4 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const documents = pgTable("documents", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
-    policyId: uuid("policy_id").references(() => policies.id, { onDelete: "set null" }),
-    s3Key: text("s3_key").notNull().unique(),
-    dependentId: uuid("dependent_id").references(() => dependents.id, { onDelete: "set null" }),
-    fileName: varchar("file_name", { length: 255 }).notNull(),
-    fileType: varchar("file_type", { length: 100 }).notNull(),
-    fileSize: integer("file_size").notNull(),
-    uploadedByUserId: uuid("uploaded_by_user_id").notNull().references(() => users.id),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// --- NUEVAS TABLAS PARA SISTEMA DE TAREAS Y PLANTILLAS ---
+// --- TABLAS PARA SISTEMA DE TAREAS Y PLANTILLAS ---
 
 export const customerTasks = pgTable("customer_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -305,7 +325,7 @@ export const generatedDocuments = pgTable("generated_documents", {
   policyId: uuid("policy_id").references(() => policies.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 255 }).notNull(),
   generatedContent: text("generated_content").notNull(),
-  s3Key: text("s3_key"), // Si se guarda como archivo
+  s3Key: text("s3_key"),
   generatedById: uuid("generated_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -319,7 +339,94 @@ export const taskComments = pgTable("task_comments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// --- RELACIONES ACTUALIZADAS ---
+// --- NUEVAS TABLAS PARA FIRMA ELECTRÓNICA ---
+
+export const signatureDocuments = pgTable("signature_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: documentStatusEnum("status").notNull().default("draft"),
+  originalFileName: varchar("original_file_name", { length: 255 }).notNull(),
+  s3Key: text("s3_key").notNull(), // PDF original
+  signedS3Key: text("signed_s3_key"), // PDF firmado
+  
+  customerId: uuid("customer_id").references(() => customers.id, { onDelete: "cascade" }),
+  policyId: uuid("policy_id").references(() => policies.id, { onDelete: "cascade" }),
+  createdById: uuid("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  
+  publicToken: varchar("public_token", { length: 100 }).notNull().unique(),
+  expiresAt: timestamp("expires_at"),
+  
+  requiresAllSignatures: boolean("requires_all_signatures").default(true),
+  allowsDecline: boolean("allows_decline").default(true),
+  
+  sentAt: timestamp("sent_at"),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const documentSigners = pgTable("document_signers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentId: uuid("document_id").notNull().references(() => signatureDocuments.id, { onDelete: "cascade" }),
+  
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  role: varchar("role", { length: 50 }).default("signer"),
+  
+  status: signerStatusEnum("status").notNull().default("pending"),
+  signedAt: timestamp("signed_at"),
+  viewedAt: timestamp("viewed_at"),
+  declinedAt: timestamp("declined_at"),
+  declineReason: text("decline_reason"),
+  
+  signerToken: varchar("signer_token", { length: 100 }).notNull().unique(),
+  
+  signatureImageS3Key: text("signature_image_s3_key"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const documentFields = pgTable("document_fields", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentId: uuid("document_id").notNull().references(() => signatureDocuments.id, { onDelete: "cascade" }),
+  signerId: uuid("signer_id").notNull().references(() => documentSigners.id, { onDelete: "cascade" }),
+  
+  type: fieldTypeEnum("type").notNull(),
+  label: varchar("label", { length: 100 }),
+  required: boolean("required").default(true),
+  
+  page: integer("page").notNull(),
+  x: integer("x").notNull(),
+  y: integer("y").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  
+  value: text("value"),
+  signedAt: timestamp("signed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const documentAuditLog = pgTable("document_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentId: uuid("document_id").notNull().references(() => signatureDocuments.id, { onDelete: "cascade" }),
+  signerId: uuid("signer_id").references(() => documentSigners.id, { onDelete: "cascade" }),
+  
+  action: varchar("action", { length: 50 }).notNull(), // created, sent, viewed, signed, etc.
+  details: json("details"), // Información adicional del evento
+  
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+
+// --- RELACIONES ---
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   manager: one(users, { fields: [users.managerId], references: [users.id], relationName: "manager_to_agents" }),
@@ -339,6 +446,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   managerAssignments: many(processorManagerAssignments, { relationName: 'manager_assignments' }),
   accounts: many(accounts),
   uploadedDocuments: many(documents),
+  createdSignatureDocuments: many(signatureDocuments), // NUEVO
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -353,6 +461,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   tasks: many(customerTasks),
   postSaleTasks: many(postSaleTasks),
   generatedDocuments: many(generatedDocuments),
+  signatureDocuments: many(signatureDocuments), // NUEVO
 }));
 
 export const policiesRelations = relations(policies, ({ one, many }) => ({
@@ -366,6 +475,7 @@ export const policiesRelations = relations(policies, ({ one, many }) => ({
     tasks: many(customerTasks),
     postSaleTasks: many(postSaleTasks),
     generatedDocuments: many(generatedDocuments),
+    signatureDocuments: many(signatureDocuments), // NUEVO
 }));
 
 export const processorManagerAssignmentsRelations = relations(processorManagerAssignments, ({ one }) => ({
@@ -410,10 +520,8 @@ export const appointmentsRelations = relations(appointments, ({ one }) => ({
 
 export const claimsRelations = relations(claims, ({ one }) => ({
     policy: one(policies, { fields: [claims.policyId], references: [policies.id] }),
-    customer: one(customers, { fields: [claims.customerId], references: [claims.id] }),
+    customer: one(customers, { fields: [claims.customerId], references: [customers.id] }),
 }));
-
-// --- NUEVAS RELACIONES PARA TAREAS Y PLANTILLAS ---
 
 export const customerTasksRelations = relations(customerTasks, ({ one, many }) => ({
   customer: one(customers, { fields: [customerTasks.customerId], references: [customers.id] }),
@@ -449,7 +557,35 @@ export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
   createdBy: one(users, { fields: [taskComments.createdById], references: [users.id] }),
 }));
 
-// Add type definitions for better TypeScript support
+// --- NUEVAS RELACIONES PARA FIRMA ELECTRÓNICA ---
+
+export const signatureDocumentsRelations = relations(signatureDocuments, ({ one, many }) => ({
+  customer: one(customers, { fields: [signatureDocuments.customerId], references: [customers.id] }),
+  policy: one(policies, { fields: [signatureDocuments.policyId], references: [policies.id] }),
+  createdBy: one(users, { fields: [signatureDocuments.createdById], references: [users.id] }),
+  signers: many(documentSigners),
+  fields: many(documentFields),
+  auditLog: many(documentAuditLog),
+}));
+
+export const documentSignersRelations = relations(documentSigners, ({ one, many }) => ({
+  document: one(signatureDocuments, { fields: [documentSigners.documentId], references: [signatureDocuments.id] }),
+  fields: many(documentFields),
+  auditLog: many(documentAuditLog),
+}));
+
+export const documentFieldsRelations = relations(documentFields, ({ one }) => ({
+  document: one(signatureDocuments, { fields: [documentFields.documentId], references: [signatureDocuments.id] }),
+  signer: one(documentSigners, { fields: [documentFields.signerId], references: [documentSigners.id] }),
+}));
+
+export const documentAuditLogRelations = relations(documentAuditLog, ({ one }) => ({
+  document: one(signatureDocuments, { fields: [documentAuditLog.documentId], references: [signatureDocuments.id] }),
+  signer: one(documentSigners, { fields: [documentAuditLog.signerId], references: [documentSigners.id] }),
+}));
+
+
+// --- DEFINICIONES DE TIPOS ---
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Customer = typeof customers.$inferSelect;
@@ -476,3 +612,12 @@ export type GeneratedDocument = typeof generatedDocuments.$inferSelect;
 export type NewGeneratedDocument = typeof generatedDocuments.$inferInsert;
 export type TaskComment = typeof taskComments.$inferSelect;
 export type NewTaskComment = typeof taskComments.$inferInsert;
+// Nuevos tipos para firma electrónica
+export type SignatureDocument = typeof signatureDocuments.$inferSelect;
+export type NewSignatureDocument = typeof signatureDocuments.$inferInsert;
+export type DocumentSigner = typeof documentSigners.$inferSelect;
+export type NewDocumentSigner = typeof documentSigners.$inferInsert;
+export type DocumentField = typeof documentFields.$inferSelect;
+export type NewDocumentField = typeof documentFields.$inferInsert;
+export type DocumentAuditLog = typeof documentAuditLog.$inferSelect;
+export type NewDocumentAuditLog = typeof documentAuditLog.$inferInsert;

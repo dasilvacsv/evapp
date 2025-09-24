@@ -2,13 +2,14 @@
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments, customerTasks, postSaleTasks, documentTemplates, generatedDocuments, taskComments } from '@/db/schema';
+import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments, customerTasks, postSaleTasks, documentTemplates, generatedDocuments, taskComments, documentSigners, signatureDocuments } from '@/db/schema';
 import { and, eq, desc, inArray, ilike, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { createPresignedPostForUpload, deleteFromS3, getPresignedUrlForDownload } from "@/lib/s3";
 import { createAppointmentSchema, createClaimSchema, createFullApplicationSchema, createTaskSchema, createPostSaleTaskSchema, createTemplateSchema } from './schemas';
 import { generateReadablePolicyId, formatDateUS, formatTextUppercase } from '@/lib/policy-utils';
-import { AORService } from '@/lib/aor-service';
+import { AORService } from '@/lib/aor-service'; // Usar el servicio actualizado
+import { SignatureService } from '@/lib/signature-service';
 
 // --- UTILIDADES DE PERMISOS ---
 
@@ -21,37 +22,112 @@ function hasDownloadPermission(user: any): boolean {
 
 function canAccessCustomerDetails(user: any, customer: any): boolean {
   if (!user || !customer) return false;
-  
+
   // Super admin puede ver todo
   if (user.role === 'super_admin') return true;
-  
+
   // Si el caso ya fue enviado a procesamiento, solo processor y super_admin pueden verlo
   if (customer.processingStartedAt) {
     return ['super_admin', 'processor'].includes(user.role);
   }
-  
+
   // Manager puede ver casos de su equipo
   if (user.role === 'manager') {
     // Necesitamos verificar si el agente creador pertenece al manager
     return true; // Se verifica en la consulta
   }
-  
+
   // Agent solo puede ver sus propios casos
   if (user.role === 'agent') {
     return customer.createdByAgentId === user.id;
   }
-  
+
   // Call center puede ver casos si tiene agente asignado
   if (user.role === 'call_center') {
     return customer.createdByAgentId === user.assignedAgentId;
   }
-  
+
   // Customer service puede ver todo lo que no esté en procesamiento
   if (user.role === 'customer_service') {
     return !customer.processingStartedAt;
   }
-  
+
   return false;
+}
+
+// --- NUEVO: Server Action para obtener la URL de descarga del AOR firmado ---
+export async function getSignedAorUrl(policyId: string) {
+    const session = await auth();
+    const user = session?.user;
+    if (!user?.id || !hasDownloadPermission(user)) {
+        return { success: false, message: "No tienes permiso para descargar documentos." };
+    }
+
+    try {
+        const policy = await db.query.policies.findFirst({
+            where: eq(policies.id, policyId),
+            columns: { aorDocumentId: true }
+        });
+
+        if (!policy || !policy.aorDocumentId) {
+            return { success: false, message: "Esta póliza no tiene un AOR asociado o aún no ha sido firmado." };
+        }
+        
+        // Usamos el aorDocumentId (que es el ID del signatureDocument) para obtener la URL
+        return await SignatureService.getSignedDocumentUrl(policy.aorDocumentId);
+
+    } catch (error) {
+        console.error("Error al obtener la URL del AOR firmado:", error);
+        return { success: false, message: "Error interno al obtener el documento." };
+    }
+}
+
+// --- NUEVO: Server Action para obtener el enlace de copia para el cliente ---
+export async function getClientCopyLink(policyId: string) {
+    const session = await auth();
+    const user = session?.user;
+    // Permitir a más roles compartir el enlace, no solo los que pueden descargar
+    const allowedRoles = ['super_admin', 'manager', 'processor', 'agent', 'customer_service'];
+    if (!user?.id || !allowedRoles.includes(user.role)) {
+        return { success: false, message: "No tienes permiso para esta acción." };
+    }
+
+    try {
+        const policy = await db.query.policies.findFirst({
+            where: eq(policies.id, policyId),
+            columns: { aorDocumentId: true }
+        });
+        
+        if (!policy?.aorDocumentId) {
+            return { success: false, message: "Póliza sin AOR asociado." };
+        }
+        
+        const doc = await db.query.signatureDocuments.findFirst({
+            where: eq(signatureDocuments.id, policy.aorDocumentId),
+            columns: { publicToken: true, status: true }
+        });
+
+        if (!doc || doc.status !== 'completed' || !doc.publicToken) {
+            return { success: false, message: "El documento aún no está listo para ser compartido." };
+        }
+
+        // --- ATENCIÓN: Este endpoint aún no existe. Deberás crearlo. ---
+        // Por ahora, devolvemos el enlace de firma, pero lo ideal es tener un /download/[publicToken]
+        const signer = await db.query.documentSigners.findFirst({
+            where: eq(documentSigners.documentId, policy.aorDocumentId),
+            columns: { signerToken: true }
+        });
+
+        if (!signer) return { success: false, message: "No se encontró firmante." };
+
+        // Devolvemos el mismo enlace de firma. La página ahora sabe qué hacer si ya está firmado.
+        const copyUrl = `${process.env.NEXTAUTH_URL}/sign/${signer.signerToken}`;
+        
+        return { success: true, url: copyUrl };
+
+    } catch (error) {
+        return { success: false, message: "Error al generar el enlace." };
+    }
 }
 
 // +++ ACCIONES PARA EL TABLERO KANBAN DE POST-VENTA +++
@@ -431,7 +507,7 @@ export async function createFullApplication(data: unknown) {
                 taxType: validatedData.customer.taxType || null,
                 income: validatedData.customer.income ? String(validatedData.customer.income) : null,
                 declaresOtherPeople: validatedData.customer.declaresOtherPeople,
-                createdByAgentId: actualAgentId, // Usar el agente correcto
+                createdByAgentId: actualAgentId,
             }).returning({ id: customers.id });
 
             if (!newCustomer?.id) throw new Error("No se pudo crear el cliente");
@@ -553,8 +629,8 @@ export async function createFullApplication(data: unknown) {
 
         console.log("Transacción completada exitosamente:", result);
 
-        // 6. GENERACIÓN AUTOMÁTICA DE AOR
-        console.log("6. Generando y enviando AOR automáticamente...");
+        // 6. GENERACIÓN AUTOMÁTICA DE AOR CON NUESTRO SISTEMA
+        console.log("6. Generando y enviando AOR con sistema propio...");
         try {
             const aorResult = await AORService.createAndSendAOR({
                 customerId: result.customerId,
@@ -569,9 +645,9 @@ export async function createFullApplication(data: unknown) {
                 createdByAgentId: result.actualAgentId,
             });
 
-            console.log("AOR creado y enviado exitosamente:", aorResult);
+            console.log("AOR creado y enviado exitosamente con sistema propio:", aorResult);
 
-            // Actualizar la póliza con el enlace del AOR y el ID de Documenso
+            // Actualizar la póliza con el enlace del AOR
             await db.update(policies)
                 .set({ 
                     aorLink: aorResult.signingUrl,
@@ -610,6 +686,7 @@ export async function createFullApplication(data: unknown) {
         return { success: false, message: `Error: ${message}` };
     }
 }
+
 
 // --- ACCIONES DE POST-VENTA ---
 
@@ -735,69 +812,70 @@ export async function getPaymentMethodDetails(policyId: string) {
   }
 }
 
-// ACCIÓN: Reenviar AOR manualmente
+// ACCIÓN: Reenviar AOR manualmente (actualizada)
 export async function resendAOR(customerId: string, policyId: string) {
-  const session = await auth();
-  const user = session?.user;
-  
-  if (!user?.id || !['agent', 'manager', 'customer_service'].includes(user.role)) {
-    return { success: false, message: "No tienes permiso para esta acción." };
-  }
+    const session = await auth();
+    const user = session?.user;
 
-  try {
-    const policy = await db.query.policies.findFirst({
-      where: eq(policies.id, policyId),
-      with: {
-        customer: true,
-      },
-    });
-
-    if (!policy) {
-      return { success: false, message: "Póliza no encontrada." };
+    if (!user?.id || !['agent', 'manager', 'customer_service'].includes(user.role)) {
+        return { success: false, message: "No tienes permiso para esta acción." };
     }
 
-    // Verificar permisos
-    if (!canAccessCustomerDetails(user, policy.customer)) {
-      return { success: false, message: "No tienes permiso para esta póliza." };
+    try {
+        const policy = await db.query.policies.findFirst({
+            where: eq(policies.id, policyId),
+            with: {
+                customer: true,
+            },
+        });
+
+        if (!policy || !policy.customer) {
+            return { success: false, message: "Póliza no encontrada." };
+        }
+
+        // Verificar permisos
+        if (!canAccessCustomerDetails(user, policy.customer)) {
+            return { success: false, message: "No tienes permiso para esta póliza." };
+        }
+
+        // Generar y enviar nuevo AOR con nuestro sistema
+        const aorResult = await AORService.createAndSendAOR({
+            customerId,
+            policyId,
+            policyData: {
+                insuranceCompany: policy.insuranceCompany || '',
+                planName: policy.planName || '',
+                marketplaceId: policy.marketplaceId || undefined,
+                effectiveDate: policy.effectiveDate ? formatDateUS(policy.effectiveDate) : undefined,
+                monthlyPremium: policy.monthlyPremium || undefined,
+            },
+            createdByAgentId: policy.customer.createdByAgentId,
+        });
+
+        // Actualizar la póliza con el nuevo enlace
+        await db.update(policies)
+            .set({ 
+                aorLink: aorResult.signingUrl,
+                aorDocumentId: aorResult.id,
+            })
+            .where(eq(policies.id, policyId));
+
+        revalidatePath('/customers');
+        return { 
+            success: true, 
+            message: "AOR reenviado con éxito usando sistema propio.",
+            data: { signingUrl: aorResult.signingUrl }
+        };
+
+    } catch (error) {
+        console.error("Error reenviando AOR:", error);
+        return { 
+            success: false, 
+            message: `Error al reenviar AOR: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+        };
     }
-
-    // Generar y enviar nuevo AOR
-    const aorResult = await AORService.createAndSendAOR({
-      customerId,
-      policyId,
-      policyData: {
-        insuranceCompany: policy.insuranceCompany || '',
-        planName: policy.planName || '',
-        marketplaceId: policy.marketplaceId || undefined,
-        effectiveDate: policy.effectiveDate ? formatDateUS(policy.effectiveDate) : undefined,
-        monthlyPremium: policy.monthlyPremium || undefined,
-      },
-      createdByAgentId: policy.customer.createdByAgentId,
-    });
-
-    // Actualizar la póliza con el nuevo enlace
-    await db.update(policies)
-      .set({ 
-        aorLink: aorResult.signingUrl,
-        aorDocumentId: aorResult.id,
-      })
-      .where(eq(policies.id, policyId));
-
-    revalidatePath('/customers');
-    return { 
-      success: true, 
-      message: "AOR reenviado con éxito.",
-      data: { signingUrl: aorResult.signingUrl }
-    };
-
-  } catch (error) {
-    console.error("Error reenviando AOR:", error);
-    return { 
-      success: false, 
-      message: `Error al reenviar AOR: ${error instanceof Error ? error.message : 'Error desconocido'}` 
-    };
-  }
 }
+
 
 // ACCIÓN: Marcar caso como enviado a procesamiento
 export async function sendToProcessing(customerId: string) {
@@ -1133,8 +1211,6 @@ export async function getTeamUsers() {
     throw new Error("No se pudieron obtener los usuarios.");
   }
 }
-
-const allowedStatuses = policyStatusEnum.enumValues;
 
 export async function updatePolicyStatus(policyId: string, newStatus: string) {
     // --> 1. Obtener la sesión del usuario

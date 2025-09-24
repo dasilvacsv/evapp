@@ -2,7 +2,7 @@
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { policies, customers, users } from '@/db/schema';
+import { policies, customers, users, signatureDocuments } from '@/db/schema';
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -228,13 +228,15 @@ export async function getPolicyById(id: string) {
   try {
     const agent = alias(users, 'agent');
     const processor = alias(users, 'processor');
+    // --- NUEVO: Alias para la tabla de documentos de firma ---
+    const sigDoc = alias(signatureDocuments, 'sigDoc');
 
     const policy = await db.select({
       id: policies.id,
       status: policies.status,
       insuranceCompany: policies.insuranceCompany,
       monthlyPremium: policies.monthlyPremium,
-      marketplaceId: policies.marketplaceId, // CAMBIO REALIZADO
+      marketplaceId: policies.marketplaceId,
       effectiveDate: policies.effectiveDate,
       taxCredit: policies.taxCredit,
       planLink: policies.planLink,
@@ -249,11 +251,15 @@ export async function getPolicyById(id: string) {
       customerId: customers.id,
       agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
       processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
+      // --- NUEVO: Campo para obtener el estado del AOR ---
+      aorStatus: sigDoc.status,
     })
     .from(policies)
     .innerJoin(customers, eq(policies.customerId, customers.id))
     .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
     .leftJoin(processor, eq(policies.assignedProcessorId, processor.id))
+    // --- NUEVO: Hacemos un LEFT JOIN para obtener el estado del documento AOR ---
+    .leftJoin(sigDoc, eq(policies.aorDocumentId, sigDoc.id))
     .where(eq(policies.id, id))
     .limit(1);
 

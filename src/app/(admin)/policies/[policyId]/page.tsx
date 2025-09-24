@@ -7,6 +7,7 @@ import UpdateStatusForm from '../components/update-status-form';
 import Link from 'next/link';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { ArrowLeft, FileText, User, Building, DollarSign, Calendar, Phone, Mail, FilePenLine, CreditCard, Link as LinkIcon, FileCheck } from 'lucide-react';
+import AorLinkManager from '../components/AorLinkManager';
 
 interface PageProps {
   params: {
@@ -197,12 +198,11 @@ export default async function PolicyDetailPage({ params }: PageProps) {
                       </Button>
                     )}
                     {policy.aorLink && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={policy.aorLink} target="_blank" rel="noopener noreferrer">
-                          <LinkIcon className="mr-2 h-4 w-4" />
-                          Ver AOR
-                        </a>
-                      </Button>
+                      <AorLinkManager 
+                        policyId={policy.id}
+                        initialAorLink={policy.aorLink}
+                        aorStatus={policy.aorStatus}
+                      />
                     )}
                   </div>
                 </div>
