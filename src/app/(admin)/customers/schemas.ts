@@ -68,6 +68,30 @@ const customerSchema = z.object({
   path: ["documentTypeOther"]
 });
 
+// NUEVO Schema para personas declaradas en impuestos (diferente a dependientes)
+const declaredPersonSchema = z.object({
+  fullName: z.string()
+    .min(1, "El nombre completo es requerido")
+    .max(255, "El nombre es demasiado largo")
+    .transform(val => val.toUpperCase().trim()),
+  relationship: z.string()
+    .min(1, "El parentesco es requerido")
+    .transform(val => val.toUpperCase().trim()),
+  immigrationStatus: z.enum([
+    'citizen', 'green_card', 'work_permit_ssn', 'u_visa', 
+    'political_asylum', 'parole', 'notice_of_action', 'other'
+  ]).optional(),
+  immigrationStatusOther: z.string().optional(),
+}).refine((data) => {
+  if (data.immigrationStatus === 'other') {
+    return data.immigrationStatusOther && data.immigrationStatusOther.trim().length > 0;
+  }
+  return true;
+}, {
+  message: "Debe especificar el estatus migratorio cuando selecciona 'Otro'",
+  path: ["immigrationStatusOther"]
+});
+
 // Schema para la póliza - CON VALIDACIONES MEJORADAS
 const policySchema = z.object({
   insuranceCompany: z.string().min(1, "La aseguradora es requerida").max(100, "El nombre de la aseguradora es demasiado largo"),
@@ -121,7 +145,7 @@ const dependentSchema = z.object({
   path: ["immigrationStatusOther"]
 });
 
-// Schema para método de pago - CON VALIDACIONES CONDICIONALES MEJORADAS
+// Schema para método de pago - CON VALIDACIONES CONDICIONALES MEJORADAS + NUEVO CAMPO
 const paymentSchema = z.object({
   methodType: z.enum(['debit_card', 'credit_card', 'bank_account']).optional(),
   cardHolderName: z.string().optional(),
@@ -139,22 +163,25 @@ const paymentSchema = z.object({
   accountNumber: z.string()
     .optional()
     .transform(val => val ? val.replace(/\D/g, '') : val),
+  // NUEVO CAMPO: Nombre completo del titular de la cuenta
+  accountHolderName: z.string().optional(),
 }).refine((data) => {
   if (data.methodType === 'credit_card' || data.methodType === 'debit_card') {
     return data.cardHolderName && data.cardNumber && data.expirationDate;
   }
   if (data.methodType === 'bank_account') {
-    return data.bankName && data.routingNumber && data.accountNumber;
+    return data.bankName && data.routingNumber && data.accountNumber && data.accountHolderName;
   }
   return true;
 }, {
   message: "Faltan campos requeridos para el método de pago seleccionado",
 });
 
-// Schema principal para la aplicación completa - CON VALIDACIONES MEJORADAS
+// Schema principal para la aplicación completa - CON VALIDACIONES MEJORADAS + VALIDACIÓN DE DOCUMENTOS
 export const createFullApplicationSchema = z.object({
   customer: customerSchema,
   dependents: z.array(dependentSchema).default([]),
+  declaredPeople: z.array(declaredPersonSchema).default([]), // NUEVO: Personas declaradas
   policy: policySchema,
   documents: z.array(documentSchema).default([]),
   payment: paymentSchema.optional(),
@@ -165,6 +192,21 @@ export const createFullApplicationSchema = z.object({
 }, {
   message: "Los dependientes no pueden tener nombres duplicados",
   path: ["dependents"]
+}).refine((data) => {
+  // NUEVA VALIDACIÓN: Al menos un documento es obligatorio para el titular principal
+  return data.documents.length > 0;
+}, {
+  message: "Debe cargar al menos un documento para el titular principal",
+  path: ["documents"]
+}).refine((data) => {
+  // NUEVA VALIDACIÓN: Si declara a otras personas, debe proporcionar la información
+  if (data.customer.declaresOtherPeople) {
+    return data.declaredPeople.length > 0;
+  }
+  return true;
+}, {
+  message: "Debe agregar información de las personas que declara en sus impuestos",
+  path: ["declaredPeople"]
 });
 
 export const createAppointmentSchema = z.object({
@@ -220,6 +262,7 @@ export const createTemplateSchema = z.object({
 });
 
 export type FullApplicationFormData = z.infer<typeof createFullApplicationSchema>;
+export type DeclaredPersonFormData = z.infer<typeof declaredPersonSchema>; // NUEVO TIPO
 export type TaskFormData = z.infer<typeof createTaskSchema>;
 export type PostSaleTaskFormData = z.infer<typeof createPostSaleTaskSchema>;
 export type TemplateFormData = z.infer<typeof createTemplateSchema>;

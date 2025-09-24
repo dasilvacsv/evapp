@@ -1,4 +1,5 @@
-import { getPolicyById } from '../actions';
+// policies/[policyId]/page.tsx
+import { getPolicyById, canEditPolicy } from '../actions'; // MODIFICADO: Importamos la nueva función
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,8 +7,10 @@ import { Separator } from '@/components/ui/separator';
 import UpdateStatusForm from '../components/update-status-form';
 import Link from 'next/link';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { ArrowLeft, FileText, User, Building, DollarSign, Calendar, Phone, Mail, FilePenLine, CreditCard, Link as LinkIcon, FileCheck } from 'lucide-react';
+import { ArrowLeft, FileText, User, Building, DollarSign, Calendar, Phone, Mail, FilePenLine, CreditCard, Link as LinkIcon, FileCheck, Lock } from 'lucide-react'; // MODIFICADO
 import AorLinkManager from '../components/AorLinkManager';
+import { auth } from '@/lib/auth'; // NUEVO: para obtener el rol del usuario
+import EnableEditingButton from '../components/EnableEditingButton'; // NUEVO: Botón de autorización
 
 interface PageProps {
   params: {
@@ -37,7 +40,18 @@ const translateStatus = (status: string) => {
 
 export default async function PolicyDetailPage({ params }: PageProps) {
   
+  const session = await auth(); // NUEVO: Obtenemos la sesión del usuario
+  const user = session?.user;
+
   const policy = await getPolicyById(params.policyId);
+
+  // NUEVO: Verificamos los permisos de edición
+  const hasEditPermission = await canEditPolicy({
+      status: policy.status,
+      customer: { createdByAgentId: policy.customerId } // Asumimos que podemos obtenerlo
+  });
+
+  const isLimitedView = user?.role === 'call_center' && !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policy.status);
 
   const getStatusColor = (status: string) => {
     const colors: { [key: string]: string } = {
@@ -81,16 +95,34 @@ export default async function PolicyDetailPage({ params }: PageProps) {
             </p>
           </div>
         </div>
-        <UpdateStatusForm
-          policyId={policy.id}
-          currentStatus={policy.status}
-          currentCompany={policy.insuranceCompany || ''}
-          currentPremium={policy.monthlyPremium || ''}
-          currentMarketplaceId={policy.marketplaceId || ''}
-          currentEffectiveDate={policy.effectiveDate || ''}
-          currentTaxCredit={policy.taxCredit || ''}
-        />
+        
+        {/* MODIFICADO: Renderizado condicional de los botones de acción */}
+        <div className="flex items-center gap-2">
+          {hasEditPermission ? (
+            <UpdateStatusForm
+              policyId={policy.id}
+              currentStatus={policy.status}
+              currentCompany={policy.insuranceCompany || ''}
+              currentPremium={policy.monthlyPremium || ''}
+              currentMarketplaceId={policy.marketplaceId || ''}
+              currentEffectiveDate={policy.effectiveDate || ''}
+              currentTaxCredit={policy.taxCredit || ''}
+            />
+          ) : (user?.role === 'super_admin' || user?.role === 'manager') && !isLimitedView ? (
+            <EnableEditingButton policyId={policy.id} />
+          ) : null}
+        </div>
       </div>
+
+      {/* NUEVO: Alerta de solo lectura */}
+      {isLimitedView && (
+        <div className="p-4 mb-4 text-sm text-yellow-800 rounded-lg bg-yellow-50" role="alert">
+          <div className="flex items-center">
+            <Lock className="h-5 w-5 mr-2" />
+            <span className="font-medium">Vista Limitada.</span> La información sensible de esta póliza ha sido restringida porque ya se encuentra en procesamiento.
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Información Principal de la Póliza */}

@@ -146,6 +146,17 @@ export const customers = pgTable("customers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// NUEVA TABLA: Personas que el cliente declara en sus impuestos (diferente a dependientes)
+export const declaredPeople = pgTable("declared_people", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  relationship: varchar("relationship", { length: 100 }).notNull(),
+  immigrationStatus: immigrationStatusEnum("immigration_status"),
+  immigrationStatusOther: text("immigration_status_other"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const policies = pgTable("policies", {
   id: uuid("id").primaryKey().defaultRandom(),
   customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
@@ -227,6 +238,8 @@ export const paymentMethods = pgTable("payment_methods", {
     methodType: paymentMethodTypeEnum("method_type").notNull(),
     provider: varchar("provider", { length: 50 }),
     providerToken: text("provider_token").notNull().unique(),
+    // NUEVO CAMPO: Nombre completo del titular de la cuenta
+    accountHolderName: varchar("account_holder_name", { length: 255 }),
     cardBrand: varchar("card_brand", { length: 50 }),
     cardLast4: varchar("card_last_4", { length: 4 }),
     cardExpiration: varchar("card_expiration", { length: 7 }),
@@ -446,7 +459,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   managerAssignments: many(processorManagerAssignments, { relationName: 'manager_assignments' }),
   accounts: many(accounts),
   uploadedDocuments: many(documents),
-  createdSignatureDocuments: many(signatureDocuments), // NUEVO
+  createdSignatureDocuments: many(signatureDocuments),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -457,11 +470,17 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   createdByAgent: one(users, { fields: [customers.createdByAgentId], references: [users.id] }),
   policies: many(policies),
   dependents: many(dependents),
+  declaredPeople: many(declaredPeople), // NUEVA RELACIÓN
   documents: many(documents),
   tasks: many(customerTasks),
   postSaleTasks: many(postSaleTasks),
   generatedDocuments: many(generatedDocuments),
-  signatureDocuments: many(signatureDocuments), // NUEVO
+  signatureDocuments: many(signatureDocuments),
+}));
+
+// NUEVA RELACIÓN para personas declaradas
+export const declaredPeopleRelations = relations(declaredPeople, ({ one }) => ({
+  customer: one(customers, { fields: [declaredPeople.customerId], references: [customers.id] }),
 }));
 
 export const policiesRelations = relations(policies, ({ one, many }) => ({
@@ -475,7 +494,7 @@ export const policiesRelations = relations(policies, ({ one, many }) => ({
     tasks: many(customerTasks),
     postSaleTasks: many(postSaleTasks),
     generatedDocuments: many(generatedDocuments),
-    signatureDocuments: many(signatureDocuments), // NUEVO
+    signatureDocuments: many(signatureDocuments),
 }));
 
 export const processorManagerAssignmentsRelations = relations(processorManagerAssignments, ({ one }) => ({
@@ -594,6 +613,8 @@ export type Policy = typeof policies.$inferSelect;
 export type NewPolicy = typeof policies.$inferInsert;
 export type Dependent = typeof dependents.$inferSelect;
 export type NewDependent = typeof dependents.$inferInsert;
+export type DeclaredPerson = typeof declaredPeople.$inferSelect; // NUEVO TIPO
+export type NewDeclaredPerson = typeof declaredPeople.$inferInsert; // NUEVO TIPO
 export type PaymentMethod = typeof paymentMethods.$inferSelect;
 export type NewPaymentMethod = typeof paymentMethods.$inferInsert;
 export type Document = typeof documents.$inferSelect;

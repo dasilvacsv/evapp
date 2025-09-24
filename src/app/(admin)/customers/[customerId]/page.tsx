@@ -18,7 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // Icons & Utils
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { ArrowLeft, User, Users, FileText, FolderOpen, Briefcase, Landmark, Wallet, Mail, Phone, MapPin, Calendar, Clock, Paperclip, Loader2, CalendarCheck, ShieldAlert, CreditCard, CheckCircle2, Send, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, User, Users, FileText, FolderOpen, Briefcase, Landmark, Wallet, Mail, Phone, MapPin, Calendar, Clock, Paperclip, Loader2, CalendarCheck, ShieldAlert, CreditCard, CheckCircle2, Send, AlertTriangle, UserCheck } from 'lucide-react';
 
 // Componentes especializados
 import CustomerTasksModule from '../components/customer-tasks-module';
@@ -172,7 +172,7 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
     return notFound();
   }
 
-  const { dependents, policies, documents: generalDocuments, tasks, generatedDocuments, ...customer } = customerDetails;
+  const { dependents, policies, documents: generalDocuments, tasks, generatedDocuments, declaredPeople, ...customer } = customerDetails;
   const agentName = customer.createdByAgent?.name || `${customer.createdByAgent?.firstName || ''} ${customer.createdByAgent?.lastName || ''}`.trim() || 'N/A';
 
   const allAppointments = policies.flatMap(p => p.appointments);
@@ -269,8 +269,9 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
 
           {/* Secciones de Historial en Tabs */}
           <Tabs defaultValue="policies">
-            <TabsList className="grid w-full grid-cols-4 md:w-[500px]">
+            <TabsList className="grid w-full grid-cols-5 md:w-[600px]">
               <TabsTrigger value="policies">Pólizas</TabsTrigger>
+              <TabsTrigger value="declared">Declarados</TabsTrigger> {/* NUEVA TAB */}
               <TabsTrigger value="appointments">Citas</TabsTrigger>
               <TabsTrigger value="claims">Reclamos</TabsTrigger>
               <TabsTrigger value="tasks">Tareas</TabsTrigger>
@@ -318,6 +319,48 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
                       )) : <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-4">No hay pólizas.</TableCell></TableRow>}
                     </TableBody>
                   </Table>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* NUEVA TAB: Personas Declaradas */}
+            <TabsContent value="declared" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <UserCheck className="mr-2 h-5 w-5 text-primary" />
+                    Personas Declaradas en Impuestos
+                  </CardTitle>
+                  <CardDescription>
+                    Personas que el cliente declara en sus impuestos (no son dependientes de la póliza).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {declaredPeople && declaredPeople.length > 0 ? (
+                    <div className="space-y-4">
+                      {declaredPeople.map(person => (
+                        <div key={person.id} className="p-4 border rounded-lg bg-muted/30">
+                          <div className="flex items-start gap-3">
+                            <UserCheck className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-base">{person.fullName}</h4>
+                              <p className="text-sm text-muted-foreground">Parentesco: {person.relationship}</p>
+                              {person.immigrationStatus && (
+                                <p className="text-sm text-muted-foreground">
+                                  Estatus Migratorio: {IMMIGRATION_STATUS_LABELS[person.immigrationStatus] || person.immigrationStatusOther}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No hay personas declaradas en impuestos.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -416,6 +459,10 @@ export default function CustomerDetailPage({ params }: { params: { customerId: s
                 <div key={pm.id} className="p-3 bg-muted/50 rounded-md">
                   <p className="font-semibold">{pm.cardBrand || pm.bankName || 'Método de Pago'}</p>
                   <p className="text-sm text-muted-foreground">Terminada en •••• {pm.cardLast4 || pm.accountLast4}</p>
+                  {/* NUEVO: Mostrar nombre del titular si existe */}
+                  {pm.accountHolderName && (
+                    <p className="text-sm text-muted-foreground">Titular: {pm.accountHolderName}</p>
+                  )}
                 </div>
               )) : <p className="text-sm text-muted-foreground text-center">No hay métodos de pago registrados.</p>}
             </CardContent>

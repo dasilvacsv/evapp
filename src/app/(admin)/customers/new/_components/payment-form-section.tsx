@@ -1,4 +1,3 @@
-// (admin)/customers/new/_components/payment-form-section.tsx
 'use client';
 
 import { Control, useWatch } from "react-hook-form";
@@ -10,12 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
 import InputMask from "react-input-mask";
+import { useSession } from "next-auth/react";
 
 interface Props {
   formControl: Control<FullApplicationFormData>;
 }
 
 export default function PaymentFormSection({ formControl }: Props) {
+  const { data: session } = useSession();
+  const userRole = session?.user?.role;
+  
   // `useWatch` nos permite re-renderizar el componente cuando un campo específico cambia.
   const paymentType = useWatch({
     control: formControl,
@@ -57,10 +60,10 @@ export default function PaymentFormSection({ formControl }: Props) {
           <div className="p-4 border rounded-md space-y-4 bg-muted/50">
             <h3 className="font-semibold">Datos de la Tarjeta</h3>
             <FormField control={formControl} name="payment.cardHolderName" render={({ field }) => (
-                <FormItem><FormLabel>Nombre en la Tarjeta</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Nombre en la Tarjeta *</FormLabel><FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={formControl} name="payment.cardNumber" render={({ field }) => (
-                <FormItem><FormLabel>Número de Tarjeta</FormLabel><FormControl>
+                <FormItem><FormLabel>Número de Tarjeta *</FormLabel><FormControl>
                     <InputMask mask="9999-9999-9999-9999" value={field.value} onChange={field.onChange}>
                         {(inputProps) => <Input {...inputProps} />}
                     </InputMask>
@@ -68,14 +71,14 @@ export default function PaymentFormSection({ formControl }: Props) {
             )} />
             <div className="grid grid-cols-2 gap-4">
                 <FormField control={formControl} name="payment.expirationDate" render={({ field }) => (
-                    <FormItem><FormLabel>Fecha de Expiración</FormLabel><FormControl>
+                    <FormItem><FormLabel>Fecha de Expiración *</FormLabel><FormControl>
                         <InputMask mask="99/99" value={field.value} onChange={field.onChange}>
                             {(inputProps) => <Input placeholder="MM/AA" {...inputProps} />}
                         </InputMask>
                     </FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={formControl} name="payment.cvv" render={({ field }) => (
-                    <FormItem><FormLabel>CVV</FormLabel><FormControl><Input placeholder="123" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>CVV *</FormLabel><FormControl><Input placeholder="123" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
             </div>
             <Alert variant="destructive">
@@ -92,14 +95,36 @@ export default function PaymentFormSection({ formControl }: Props) {
         {paymentType === 'bank_account' && (
              <div className="p-4 border rounded-md space-y-4 bg-muted/50">
                 <h3 className="font-semibold">Datos de la Cuenta Bancaria</h3>
-                 <FormField control={formControl} name="payment.bankName" render={({ field }) => (
-                    <FormItem><FormLabel>Nombre del Banco</FormLabel><FormControl><Input placeholder="Bank of America" {...field} /></FormControl><FormMessage /></FormItem>
+                
+                {/* NUEVO CAMPO: Nombre completo del titular de la cuenta */}
+                <FormField control={formControl} name="payment.accountHolderName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nombre Completo del Titular de la Cuenta *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="JOHN DOE" 
+                          {...field} 
+                          className="uppercase"
+                          onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                      {userRole === 'call_center' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Este nombre se mostrará como Customer ID en el sistema.
+                        </p>
+                      )}
+                    </FormItem>
+                )} />
+                
+                <FormField control={formControl} name="payment.bankName" render={({ field }) => (
+                    <FormItem><FormLabel>Nombre del Banco *</FormLabel><FormControl><Input placeholder="Bank of America" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={formControl} name="payment.routingNumber" render={({ field }) => (
-                    <FormItem><FormLabel>Número de Ruta (Routing)</FormLabel><FormControl><Input placeholder="012345678" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Número de Ruta (Routing) *</FormLabel><FormControl><Input placeholder="012345678" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={formControl} name="payment.accountNumber" render={({ field }) => (
-                    <FormItem><FormLabel>Número de Cuenta</FormLabel><FormControl><Input placeholder="876543210" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Número de Cuenta *</FormLabel><FormControl><Input placeholder="876543210" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
             </div>
         )}

@@ -2,8 +2,8 @@
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments, customerTasks, postSaleTasks, documentTemplates, generatedDocuments, taskComments, documentSigners, signatureDocuments } from '@/db/schema';
-import { and, eq, desc, inArray, ilike, sql } from 'drizzle-orm';
+import { customers, users, policies, dependents, documents, paymentMethods, policyStatusEnum, claims, appointments, customerTasks, postSaleTasks, documentTemplates, generatedDocuments, taskComments, documentSigners, signatureDocuments, declaredPeople } from '@/db/schema';
+import { and, eq, desc, inArray, ilike, sql, gte, lte } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { createPresignedPostForUpload, deleteFromS3, getPresignedUrlForDownload } from "@/lib/s3";
 import { createAppointmentSchema, createClaimSchema, createFullApplicationSchema, createTaskSchema, createPostSaleTaskSchema, createTemplateSchema } from './schemas';
@@ -26,14 +26,17 @@ function canAccessCustomerDetails(user: any, customer: any): boolean {
   // Super admin puede ver todo
   if (user.role === 'super_admin') return true;
 
-  // Si el caso ya fue enviado a procesamiento, solo processor y super_admin pueden verlo
+  // Si el caso ya fue enviado a procesamiento, solo processor y super_admin pueden verlo con detalles completos
   if (customer.processingStartedAt) {
+    // Call center solo puede ver información limitada después de procesamiento
+    if (user.role === 'call_center') {
+      return customer.createdByAgentId === user.assignedAgentId;
+    }
     return ['super_admin', 'processor'].includes(user.role);
   }
 
   // Manager puede ver casos de su equipo
   if (user.role === 'manager') {
-    // Necesitamos verificar si el agente creador pertenece al manager
     return true; // Se verifica en la consulta
   }
 
@@ -52,6 +55,23 @@ function canAccessCustomerDetails(user: any, customer: any): boolean {
     return !customer.processingStartedAt;
   }
 
+  return false;
+}
+
+// NUEVA FUNCIÓN: Verificar si puede editar después de cambio de estatus
+function canEditAfterStatusChange(user: any, policy: any): boolean {
+  if (!user || !policy) return false;
+  
+  // Solo super_admin y manager pueden cambiar estatus a "En Revisión" para permitir edición
+  if (['super_admin', 'manager'].includes(user.role)) {
+    return true;
+  }
+  
+  // Si la póliza está "En Revisión", los agentes pueden editar
+  if (policy.status === 'in_review') {
+    return ['agent', 'call_center'].includes(user.role);
+  }
+  
   return false;
 }
 
@@ -111,8 +131,6 @@ export async function getClientCopyLink(policyId: string) {
             return { success: false, message: "El documento aún no está listo para ser compartido." };
         }
 
-        // --- ATENCIÓN: Este endpoint aún no existe. Deberás crearlo. ---
-        // Por ahora, devolvemos el enlace de firma, pero lo ideal es tener un /download/[publicToken]
         const signer = await db.query.documentSigners.findFirst({
             where: eq(documentSigners.documentId, policy.aorDocumentId),
             columns: { signerToken: true }
@@ -120,7 +138,6 @@ export async function getClientCopyLink(policyId: string) {
 
         if (!signer) return { success: false, message: "No se encontró firmante." };
 
-        // Devolvemos el mismo enlace de firma. La página ahora sabe qué hacer si ya está firmado.
         const copyUrl = `${process.env.NEXTAUTH_URL}/sign/${signer.signerToken}`;
         
         return { success: true, url: copyUrl };
@@ -232,9 +249,16 @@ function formatDateForDB(date: Date | undefined): string | undefined {
   return `${year}-${month}-${day}`;
 }
 
-// --- ACCIONES PRINCIPALES DEL MÓDULO DE CLIENTES CON PERMISOS ---
-
-export async function getCustomers(page = 1, limit = 10, search = '') {
+// NUEVA FUNCIÓN: Filtros avanzados para agentes
+export async function getCustomersWithFilters(
+  page = 1, 
+  limit = 10, 
+  search = '', 
+  startDate?: string,
+  endDate?: string,
+  status?: string,
+  insuranceCompany?: string
+) {
   const session = await auth();
   const user = session?.user;
   if (!user?.id || !user.role) {
@@ -257,13 +281,20 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
     } else if (user.role === 'call_center' && user.assignedAgentId) {
       conditions.push(eq(customers.createdByAgentId, user.assignedAgentId));
     } else if (user.role === 'customer_service') {
-      // Customer service ve todo excepto casos en procesamiento
       conditions.push(eq(customers.processingStartedAt, null));
     }
-    // super_admin y processor ven todo
 
     if (search) {
       conditions.push(ilike(customers.fullName, `%${search}%`));
+    }
+
+    // NUEVOS FILTROS
+    if (startDate) {
+      conditions.push(gte(customers.createdAt, new Date(startDate)));
+    }
+    
+    if (endDate) {
+      conditions.push(lte(customers.createdAt, new Date(endDate)));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -294,11 +325,25 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
       }
     });
 
+    // Filtrar por estatus y aseguradora si se especifica
+    let filteredCustomers = customersList;
+    if (status || insuranceCompany) {
+      filteredCustomers = customersList.filter(customer => {
+        const policy = customer.policies[0];
+        if (!policy) return false;
+        
+        if (status && policy.status !== status) return false;
+        if (insuranceCompany && policy.insuranceCompany !== insuranceCompany) return false;
+        
+        return true;
+      });
+    }
+
     const totalQuery = await db.select({ count: sql<number>`count(*)::int` }).from(customers).where(whereClause);
     const total = totalQuery[0]?.count || 0;
 
     return {
-      customers: customersList,
+      customers: filteredCustomers,
       pagination: {
         page, limit, total, totalPages: Math.ceil(total / limit),
       },
@@ -307,6 +352,12 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
     console.error('Error al obtener clientes:', error);
     throw new Error('No se pudieron obtener los clientes.');
   }
+}
+
+// --- ACCIONES PRINCIPALES DEL MÓDULO DE CLIENTES CON PERMISOS ---
+
+export async function getCustomers(page = 1, limit = 10, search = '') {
+  return getCustomersWithFilters(page, limit, search);
 }
 
 export async function getCustomerDetails(customerId: string) {
@@ -326,6 +377,10 @@ export async function getCustomerDetails(customerId: string) {
                         lastName: true,
                         name: true
                     }
+                },
+                // NUEVA RELACIÓN: Personas declaradas
+                declaredPeople: {
+                    orderBy: [desc(declaredPeople.createdAt)]
                 },
                 dependents: {
                     with: {
@@ -435,6 +490,21 @@ export async function getCustomerDetails(customerId: string) {
             throw new Error("Acceso denegado.");
         }
 
+        // NUEVA LÓGICA: Si es call center y está en procesamiento, limitar información
+        if (user.role === 'call_center' && customerDetails.processingStartedAt) {
+            return {
+                ...customerDetails,
+                // Mantener solo información básica
+                documents: [],
+                dependents: customerDetails.dependents.map(dep => ({
+                    ...dep,
+                    documents: []
+                })),
+                declaredPeople: [], // Ocultar personas declaradas
+                tasks: customerDetails.tasks.filter(task => task.assignedToId === user.id), // Solo sus tareas
+            };
+        }
+
         return customerDetails;
 
     } catch (error) {
@@ -460,6 +530,7 @@ export async function getDocumentUrl(s3Key: string) {
 
 /**
  * Crea la aplicación completa con validaciones mejoradas, formateo automático y AOR automático
+ * ACTUALIZADO para incluir personas declaradas
  */
 export async function createFullApplication(data: unknown) {
     const session = await auth();
@@ -513,6 +584,21 @@ export async function createFullApplication(data: unknown) {
             if (!newCustomer?.id) throw new Error("No se pudo crear el cliente");
             const customerId = newCustomer.id;
             console.log(`Cliente creado con ID: ${customerId}`);
+
+            // NUEVO: 1.5. Crear personas declaradas si las hay
+            if (validatedData.declaredPeople?.length) {
+                console.log("1.5. Creando personas declaradas...");
+                for (const declaredPerson of validatedData.declaredPeople) {
+                    await tx.insert(declaredPeople).values({
+                        customerId: customerId,
+                        fullName: formatTextUppercase(declaredPerson.fullName),
+                        relationship: formatTextUppercase(declaredPerson.relationship),
+                        immigrationStatus: declaredPerson.immigrationStatus || null,
+                        immigrationStatusOther: declaredPerson.immigrationStatusOther ? formatTextUppercase(declaredPerson.immigrationStatusOther) : null,
+                    });
+                }
+                console.log(`Creadas ${validatedData.declaredPeople.length} personas declaradas.`);
+            }
 
             console.log("2. Creando póliza...");
             
@@ -583,7 +669,7 @@ export async function createFullApplication(data: unknown) {
                 console.log(`Insertados ${generalDocsData.length} documentos generales.`);
             }
     
-            // 5. Crear método de pago con validaciones mejoradas
+            // 5. Crear método de pago con validaciones mejoradas + NUEVO CAMPO
             if (validatedData.payment && validatedData.payment.methodType) {
                 console.log("5. Creando método de pago...");
                 
@@ -604,6 +690,10 @@ export async function createFullApplication(data: unknown) {
                     if (!validatedData.payment.accountNumber?.trim()) {
                         throw new Error("El número de cuenta es requerido");
                     }
+                    // NUEVA VALIDACIÓN
+                    if (!validatedData.payment.accountHolderName?.trim()) {
+                        throw new Error("El nombre completo del titular de la cuenta es requerido");
+                    }
                 }
                 
                 const mockProviderToken = `policy_${readablePolicyId}_${Date.now()}`; 
@@ -613,6 +703,8 @@ export async function createFullApplication(data: unknown) {
                     methodType: validatedData.payment.methodType,
                     provider: 'mock_provider',
                     providerToken: mockProviderToken,
+                    // NUEVO CAMPO: Nombre del titular de la cuenta (se muestra como customerId para call center)
+                    accountHolderName: validatedData.payment.accountHolderName || validatedData.payment.cardHolderName || null,
                     cardBrand: validatedData.payment.cardNumber ? 'visa' : null,
                     cardLast4: validatedData.payment.cardNumber ? validatedData.payment.cardNumber.replace(/\D/g, '').slice(-4) : null,
                     cardExpiration: validatedData.payment.expirationDate || null,
@@ -784,8 +876,8 @@ export async function getPaymentMethodDetails(policyId: string) {
   const session = await auth();
   const user = session?.user;
 
-  if (!user?.id || user.role !== 'super_admin') {
-    return { success: false, error: "No tienes permiso para realizar esta acción." };
+  if (!user?.id) {
+    return { success: false, error: "No autorizado." };
   }
 
   try {
@@ -797,15 +889,25 @@ export async function getPaymentMethodDetails(policyId: string) {
       return { success: false, error: "No se encontró método de pago." };
     }
     
-    return { 
-      success: true, 
-      data: {
-        methodType: paymentMethod.methodType,
-        cardBrand: paymentMethod.cardBrand,
-        cardLast4: paymentMethod.cardLast4,
-        bankName: paymentMethod.bankName,
-      }
+    // NUEVA LÓGICA: Mostrar accountHolderName como customerId para call center
+    const responseData: any = {
+      methodType: paymentMethod.methodType,
+      cardBrand: paymentMethod.cardBrand,
+      cardLast4: paymentMethod.cardLast4,
+      bankName: paymentMethod.bankName,
     };
+
+    // Para call center, mostrar el nombre del titular como Customer ID
+    if (user.role === 'call_center' && paymentMethod.accountHolderName) {
+      responseData.customerId = paymentMethod.accountHolderName;
+    }
+
+    // Solo super_admin puede ver todos los detalles
+    if (user.role === 'super_admin') {
+      responseData.accountHolderName = paymentMethod.accountHolderName;
+    }
+    
+    return { success: true, data: responseData };
   } catch (error) {
     console.error("Error al obtener método de pago:", error);
     return { success: false, error: "No se pudo obtener la información de pago." };
@@ -896,6 +998,52 @@ export async function sendToProcessing(customerId: string) {
   } catch (error) {
     console.error("Error enviando a procesamiento:", error);
     return { success: false, message: "Error al enviar a procesamiento." };
+  }
+}
+
+// NUEVA ACCIÓN: Cambiar estatus a "En Revisión" para permitir edición
+export async function enableEditingForPolicy(policyId: string, reason: string) {
+  const session = await auth();
+  const user = session?.user;
+  
+  if (!user?.id || !['super_admin', 'manager'].includes(user.role)) {
+    return { success: false, message: "No tienes permiso para esta acción." };
+  }
+
+  try {
+    // Actualizar el estatus de la póliza a "En Revisión"
+    await db.update(policies)
+      .set({ 
+        status: 'in_review',
+        updatedAt: new Date() 
+      })
+      .where(eq(policies.id, policyId));
+
+    // Crear una tarea para registrar el cambio
+    const policy = await db.query.policies.findFirst({
+      where: eq(policies.id, policyId),
+      with: { customer: true }
+    });
+
+    if (policy && policy.customer) {
+      await db.insert(customerTasks).values({
+        customerId: policy.customerId,
+        policyId: policyId,
+        title: "Póliza habilitada para edición",
+        description: `${user.name || 'Administrador'} habilitó la póliza para edición. Razón: ${reason}`,
+        type: "general",
+        priority: "medium",
+        assignedToId: policy.customer.createdByAgentId,
+        createdById: user.id,
+      });
+    }
+
+    revalidatePath('/customers');
+    revalidatePath('/policies');
+    return { success: true, message: "Póliza habilitada para edición." };
+  } catch (error) {
+    console.error("Error habilitando edición:", error);
+    return { success: false, message: "Error al habilitar la edición." };
   }
 }
 
@@ -1213,23 +1361,21 @@ export async function getTeamUsers() {
 }
 
 export async function updatePolicyStatus(policyId: string, newStatus: string) {
-    // --> 1. Obtener la sesión del usuario
     const session = await auth();
     const user = session?.user;
 
-    // --> 2. Validar que el usuario esté autenticado
     if (!user?.id || !user.role) {
         return { success: false, message: 'No autenticado.' };
     }
 
-    // --> 3. Definir qué roles tienen permiso para cambiar el estado de una póliza
-    const authorizedRoles = ['super_admin', 'manager', 'processor']; // <-- AJUSTA ESTOS ROLES SEGÚN NECESITES
+    // Definir qué roles tienen permiso para cambiar el estado de una póliza
+    const authorizedRoles = ['super_admin', 'manager', 'processor'];
     
     if (!authorizedRoles.includes(user.role)) {
         return { success: false, message: 'No tienes permiso para cambiar el estado de las pólizas.' };
     }
 
-    // --> 4. Obtener la póliza y el cliente para verificar la propiedad
+    // Obtener la póliza y el cliente para verificar la propiedad
     const policy = await db.query.policies.findFirst({
         where: eq(policies.id, policyId),
         with: {
@@ -1241,12 +1387,11 @@ export async function updatePolicyStatus(policyId: string, newStatus: string) {
         return { success: false, message: "Póliza o cliente no encontrado." };
     }
 
-    // --> 5. Usar tu propia función para asegurar que el usuario tenga acceso a este cliente específico
+    // Usar función para asegurar que el usuario tenga acceso a este cliente específico
     if (!canAccessCustomerDetails(user, policy.customer)) {
         return { success: false, message: "No tienes acceso a esta póliza." };
     }
 
-    // El resto de la lógica se mantiene, ahora protegida por las validaciones anteriores
     const allowedStatuses = policyStatusEnum.enumValues;
     if (!allowedStatuses.includes(newStatus as any)) {
         return { success: false, message: 'Estado no válido.' };
@@ -1256,12 +1401,12 @@ export async function updatePolicyStatus(policyId: string, newStatus: string) {
         await db.update(policies)
             .set({
                 status: newStatus as typeof policyStatusEnum.enumValues[number],
-                updatedAt: new Date(), // Actualiza la fecha de modificación
+                updatedAt: new Date(),
             })
             .where(eq(policies.id, policyId));
 
-        revalidatePath('/customers'); // Invalida el caché de la página para que se actualice
-        revalidatePath('/post-venta'); // También es buena idea revalidar esta ruta
+        revalidatePath('/customers');
+        revalidatePath('/post-venta');
 
         return { success: true };
     } catch (error) {

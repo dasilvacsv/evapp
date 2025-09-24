@@ -37,6 +37,8 @@ export default function PolicyFormSection({ formControl }: Props) {
     const userRole = session?.user?.role;
     const isLoadingSession = status === 'loading';
     const canEditSensitiveFields = userRole === 'processor';
+    // NUEVA LÓGICA: Ocultar etiquetas para call center
+    const isCallCenter = userRole === 'call_center';
 
     if (isLoadingSession) {
         return (
@@ -60,7 +62,7 @@ export default function PolicyFormSection({ formControl }: Props) {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>3. Información de la Póliza</CardTitle>
+                <CardTitle>4. Información de la Póliza</CardTitle>
                 <CardDescription>
                     Detalles de la cobertura, costos y notas adicionales de la venta.
                 </CardDescription>
@@ -128,11 +130,14 @@ export default function PolicyFormSection({ formControl }: Props) {
                         name="policy.marketplaceId"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Marketplace ID</FormLabel>
+                                {/* CAMBIO: Eliminar etiqueta "(Marketplace)" para call center */}
+                                <FormLabel>
+                                  {isCallCenter ? "ID Marketplace" : "Marketplace ID"}
+                                </FormLabel>
                                 <FormControl>
                                     <Input placeholder="Opcional" {...field} disabled={!canEditSensitiveFields} />
                                 </FormControl>
-                                {!canEditSensitiveFields && <p className="text-xs text-muted-foreground pt-1">Solo editable por Procesamiento.</p>}
+                                {!canEditSensitiveFields && !isCallCenter && <p className="text-xs text-muted-foreground pt-1">Solo editable por Procesamiento.</p>}
                                 <FormMessage />
                             </FormItem>
                         )}
@@ -148,7 +153,7 @@ export default function PolicyFormSection({ formControl }: Props) {
                             <FormControl>
                                 <FormDateInput field={field} />
                             </FormControl>
-                            {!canEditSensitiveFields && <p className="text-xs text-muted-foreground pt-1">Solo editable por Procesamiento.</p>}
+                            {!canEditSensitiveFields && !isCallCenter && <p className="text-xs text-muted-foreground pt-1">Solo editable por Procesamiento.</p>}
                             <FormMessage />
                         </FormItem>
                     )}

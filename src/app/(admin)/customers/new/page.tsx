@@ -15,6 +15,7 @@ import { Loader2 } from 'lucide-react';
 
 // Form Sections and the Stepper component
 import CustomerFormSection from './_components/customer-form-section';
+import DeclaredPeopleFormSection from './_components/declared-people-form-section'; // NUEVO
 import DependentsFormSection from './_components/dependents-form-section';
 import PolicyFormSection from './_components/policy-form-section';
 import PaymentFormSection from './_components/payment-form-section';
@@ -22,6 +23,7 @@ import FormStepper from './_components/form-stepper';
 
 const steps = [
   { id: 'Titular', name: 'Información y Documentos', fields: ['customer', 'documents'] },
+  { id: 'Declarados', name: 'Personas Declaradas', fields: ['declaredPeople'] }, // NUEVO
   { id: 'Dependientes', name: 'Dependientes', fields: ['dependents'] },
   { id: 'Póliza', name: 'Datos de la Póliza', fields: ['policy'] },
   { id: 'Pago', name: 'Información de Pago', fields: ['payment'] },
@@ -43,6 +45,7 @@ export default function NewCustomerPage() {
         zipCode: "", immigrationStatusOther: "", documentTypeOther: "",
         income: undefined, declaresOtherPeople: false, appliesToCoverage: true,
       },
+      declaredPeople: [], // NUEVO
       dependents: [],
       policy: {
         insuranceCompany: "",
@@ -55,7 +58,7 @@ export default function NewCustomerPage() {
       documents: [],
       payment: {
         methodType: undefined, cardHolderName: "", cardNumber: "", expirationDate: "",
-        cvv: "", bankName: "", routingNumber: "", accountNumber: "",
+        cvv: "", bankName: "", routingNumber: "", accountNumber: "", accountHolderName: "", // NUEVO CAMPO
       }
     },
   });
@@ -107,9 +110,11 @@ export default function NewCustomerPage() {
       const errorState = form.formState.errors;
       let errorCount = 0;
       if (fieldsToValidate.includes('customer') && errorState.customer) errorCount += Object.keys(errorState.customer).length;
+      if (fieldsToValidate.includes('declaredPeople') && errorState.declaredPeople) errorCount += Array.isArray(errorState.declaredPeople) ? errorState.declaredPeople.length : 1; // NUEVO
       if (fieldsToValidate.includes('policy') && errorState.policy) errorCount += Object.keys(errorState.policy).length;
       if (fieldsToValidate.includes('payment') && errorState.payment) errorCount += Object.keys(errorState.payment).length;
       if (fieldsToValidate.includes('dependents') && errorState.dependents) errorCount += Array.isArray(errorState.dependents) ? errorState.dependents.length : 1;
+      if (fieldsToValidate.includes('documents') && errorState.documents) errorCount += 1; // NUEVO
       
       toast({
         variant: "destructive",
@@ -168,12 +173,15 @@ export default function NewCustomerPage() {
             <CustomerFormSection formControl={form.control} setFormValue={form.setValue} />
           </div>
           <div className={currentStep === 1 ? 'block' : 'hidden'}>
-            <DependentsFormSection formControl={form.control} setFormValue={form.setValue} />
+            <DeclaredPeopleFormSection formControl={form.control} setFormValue={form.setValue} /> {/* NUEVO */}
           </div>
           <div className={currentStep === 2 ? 'block' : 'hidden'}>
-            <PolicyFormSection formControl={form.control} />
+            <DependentsFormSection formControl={form.control} setFormValue={form.setValue} />
           </div>
           <div className={currentStep === 3 ? 'block' : 'hidden'}>
+            <PolicyFormSection formControl={form.control} />
+          </div>
+          <div className={currentStep === 4 ? 'block' : 'hidden'}>
             <PaymentFormSection formControl={form.control} />
           </div>
 
