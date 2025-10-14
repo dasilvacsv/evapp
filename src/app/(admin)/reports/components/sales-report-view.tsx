@@ -21,12 +21,13 @@ interface SalesFilters {
 }
 
 export default function SalesReportView() {
+  // CAMBIO: El estado inicial ahora usa 'all' en lugar de ''
   const [filters, setFilters] = useState<SalesFilters>({
     startDate: '',
     endDate: '',
-    agentId: '',
-    insuranceCompany: '',
-    status: ''
+    agentId: 'all',
+    insuranceCompany: 'all',
+    status: 'all'
   });
 
   const [reportData, setReportData] = useState<any>(null);
@@ -47,22 +48,17 @@ export default function SalesReportView() {
       setAgents(agentsData);
       setCompanies(companiesData);
       
-      // Cargar datos iniciales con filtros por defecto (último mes)
       const endDate = new Date();
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - 1);
       
-      setFilters({
+      const initialFilters = {
         ...filters,
         startDate: startDate.toISOString().split('T')[0],
         endDate: endDate.toISOString().split('T')[0]
-      });
-
-      await loadReportData({
-        ...filters,
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0]
-      });
+      };
+      setFilters(initialFilters);
+      await loadReportData(initialFilters);
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
@@ -143,7 +139,8 @@ export default function SalesReportView() {
                   <SelectValue placeholder="Todos los agentes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los agentes</SelectItem>
+                  {/* CAMBIO: value="all" en lugar de "" */}
+                  <SelectItem value="all">Todos los agentes</SelectItem>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
                       {agent.name}
@@ -159,7 +156,8 @@ export default function SalesReportView() {
                   <SelectValue placeholder="Todas las aseguradoras" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas</SelectItem>
+                   {/* CAMBIO: value="all" en lugar de "" */}
+                  <SelectItem value="all">Todas</SelectItem>
                   <SelectItem value="Obama">Obama</SelectItem>
                   <SelectItem value="Cigna">Cigna</SelectItem>
                   <SelectItem value="Aetna">Aetna</SelectItem>
@@ -179,7 +177,8 @@ export default function SalesReportView() {
                   <SelectValue placeholder="Todos los estados" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  {/* CAMBIO: value="all" en lugar de "" */}
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="active">Activa</SelectItem>
                   <SelectItem value="approved">Aprobada</SelectItem>
                   <SelectItem value="in_review">En Revisión</SelectItem>
@@ -193,7 +192,6 @@ export default function SalesReportView() {
             </div>
           </div>
           
-          {/* Botones de Rango Rápido */}
           <div className="flex gap-2 mt-4">
             <Button variant="outline" size="sm" onClick={() => setQuickDateRange(1)}>
               Hoy
