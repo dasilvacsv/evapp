@@ -175,7 +175,7 @@ export const policies = pgTable("policies", {
 
   assignedProcessorId: uuid("assigned_processor_id").references(() => users.id, { onDelete: "set null" }),
   commissionStatus: commissionStatusEnum("commission_status").default("pending"),
-  
+  updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -486,6 +486,7 @@ export const declaredPeopleRelations = relations(declaredPeople, ({ one }) => ({
 export const policiesRelations = relations(policies, ({ one, many }) => ({
     customer: one(customers, { fields: [policies.customerId], references: [customers.id] }),
     assignedProcessor: one(users, { fields: [policies.assignedProcessorId], references: [users.id] }),
+    updatedBy: one(users, { fields: [policies.updatedById], references: [users.id] }),
     commissionRecords: many(commissionRecords),
     paymentMethod: one(paymentMethods),
     documents: many(documents),
