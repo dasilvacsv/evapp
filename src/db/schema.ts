@@ -12,7 +12,7 @@ import {
   pgEnum,
   primaryKey,
   integer,
-  json, // Añadido para documentAuditLog
+  json,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { AdapterAccount } from "next-auth/adapters";
@@ -117,6 +117,30 @@ export const accounts = pgTable(
     compoundKey: primaryKey({ columns: [account.provider, account.providerAccountId] }),
   })
 );
+
+// --- TABLAS DE EQUIPOS --- (AÑADIDO)
+
+// Tabla para equipos de ventas
+export const salesTeams = pgTable("sales_teams", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  teamLeaderId: uuid("team_leader_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Tabla para asignar miembros a equipos
+export const teamMembers = pgTable("team_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id").notNull().references(() => salesTeams.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+});
+
+
+// --- OTRAS TABLAS PRINCIPALES ---
 
 export const customers = pgTable("customers", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -238,7 +262,6 @@ export const paymentMethods = pgTable("payment_methods", {
     methodType: paymentMethodTypeEnum("method_type").notNull(),
     provider: varchar("provider", { length: 50 }),
     providerToken: text("provider_token").notNull().unique(),
-    // NUEVO CAMPO: Nombre completo del titular de la cuenta
     accountHolderName: varchar("account_holder_name", { length: 255 }),
     cardBrand: varchar("card_brand", { length: 50 }),
     cardLast4: varchar("card_last_4", { length: 4 }),
@@ -460,10 +483,24 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   accounts: many(accounts),
   uploadedDocuments: many(documents),
   createdSignatureDocuments: many(signatureDocuments),
+  // Relaciones de equipos (AÑADIDO)
+  ledTeams: many(salesTeams),
+  teamMemberships: many(teamMembers),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
   user: one(users, { fields: [accounts.userId], references: [users.id] }),
+}));
+
+// Relaciones de equipos (AÑADIDO)
+export const salesTeamsRelations = relations(salesTeams, ({ one, many }) => ({
+  teamLeader: one(users, { fields: [salesTeams.teamLeaderId], references: [users.id] }),
+  members: many(teamMembers),
+}));
+
+export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
+  team: one(salesTeams, { fields: [teamMembers.teamId], references: [salesTeams.id] }),
+  user: one(users, { fields: [teamMembers.userId], references: [users.id] }),
 }));
 
 export const customersRelations = relations(customers, ({ one, many }) => ({
@@ -478,7 +515,6 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   signatureDocuments: many(signatureDocuments),
 }));
 
-// NUEVA RELACIÓN para personas declaradas
 export const declaredPeopleRelations = relations(declaredPeople, ({ one }) => ({
   customer: one(customers, { fields: [declaredPeople.customerId], references: [customers.id] }),
 }));
@@ -614,8 +650,8 @@ export type Policy = typeof policies.$inferSelect;
 export type NewPolicy = typeof policies.$inferInsert;
 export type Dependent = typeof dependents.$inferSelect;
 export type NewDependent = typeof dependents.$inferInsert;
-export type DeclaredPerson = typeof declaredPeople.$inferSelect; // NUEVO TIPO
-export type NewDeclaredPerson = typeof declaredPeople.$inferInsert; // NUEVO TIPO
+export type DeclaredPerson = typeof declaredPeople.$inferSelect;
+export type NewDeclaredPerson = typeof declaredPeople.$inferInsert;
 export type PaymentMethod = typeof paymentMethods.$inferSelect;
 export type NewPaymentMethod = typeof paymentMethods.$inferInsert;
 export type Document = typeof documents.$inferSelect;
@@ -643,3 +679,8 @@ export type DocumentField = typeof documentFields.$inferSelect;
 export type NewDocumentField = typeof documentFields.$inferInsert;
 export type DocumentAuditLog = typeof documentAuditLog.$inferSelect;
 export type NewDocumentAuditLog = typeof documentAuditLog.$inferInsert;
+// Nuevos tipos para equipos (AÑADIDO)
+export type SalesTeam = typeof salesTeams.$inferSelect;
+export type NewSalesTeam = typeof salesTeams.$inferInsert;
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type NewTeamMember = typeof teamMembers.$inferInsert;

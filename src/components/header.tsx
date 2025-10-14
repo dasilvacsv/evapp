@@ -32,7 +32,8 @@ import {
   Users2 as Team,
   Settings,
   Calculator,
-  ClipboardList
+  ClipboardList,
+  TrendingUp, // <-- CAMBIO: Se importa el nuevo ícono
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN DEL MENÚ ---
@@ -44,6 +45,7 @@ const menuConfig = {
       { href: '/policies', label: 'Pólizas', icon: FileText },
       { href: '/customers', label: 'Clientes', icon: Users },
       { href: '/team', label: 'Equipo', icon: Team },
+      { href: '/reports', label: 'Reportes', icon: TrendingUp }, // <-- CAMBIO: Se agrega la ruta de reportes
     ]},
     { section: 'Operaciones', items: [
       { href: '/processing', label: 'Procesamiento', icon: ClipboardList },
@@ -59,6 +61,7 @@ const menuConfig = {
       { href: '/policies', label: 'Pólizas', icon: FileText },
       { href: '/customers', label: 'Clientes', icon: Users },
       { href: '/team', label: 'Equipo', icon: Team },
+      { href: '/reports', label: 'Reportes', icon: TrendingUp }, // <-- CAMBIO: Se agrega la ruta de reportes
     ]}
   ],
   agent: [

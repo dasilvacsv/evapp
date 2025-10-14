@@ -1,12 +1,11 @@
 'use client';
 
-import Image from 'next/image'; // <-- CAMBIO 1: Se importa Image
+import Image from 'next/image';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
-  // Shield, // Ya no se necesita
   BarChart3,
   FileText,
   Users,
@@ -16,7 +15,8 @@ import {
   ClipboardList,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  TrendingUp, // <-- CAMBIO: Se importa el nuevo ícono
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,6 +43,7 @@ const menuConfig = {
       { href: '/policies', label: 'Pólizas', icon: FileText },
       { href: '/customers', label: 'Clientes', icon: Users },
       { href: '/team', label: 'Equipo', icon: Team },
+      { href: '/reports', label: 'Reportes', icon: TrendingUp }, // <-- CAMBIO: Se agrega la ruta de reportes
     ]},
     { section: 'Operaciones', items: [
       { href: '/processing', label: 'Procesamiento', icon: ClipboardList },
@@ -58,6 +59,7 @@ const menuConfig = {
       { href: '/policies', label: 'Pólizas', icon: FileText },
       { href: '/customers', label: 'Clientes', icon: Users },
       { href: '/team', label: 'Equipo', icon: Team },
+      { href: '/reports', label: 'Reportes', icon: TrendingUp }, // <-- CAMBIO: Se agrega la ruta de reportes
     ]}
   ],
   agent: [
@@ -117,7 +119,6 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
       >
         {/* --- Encabezado --- */}
         <div className="flex items-center h-16 px-4 border-b">
-          {/* <-- CAMBIO 2: Se reemplaza el ícono por la imagen del logo --> */}
           <Image
             src="/logo.png"
             alt="Logo Sistema EV"
@@ -175,10 +176,10 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
               </Tooltip>
               <DropdownMenuContent className="w-60 mb-2" side="top" align="start">
                   <DropdownMenuLabel className="font-normal">
-                      <div className="flex flex-col space-y-1">
-                          <p className="text-sm font-medium leading-none">{userName}</p>
-                          <p className="text-xs leading-none text-muted-foreground">{userEmail}</p>
-                      </div>
+                    <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{userName}</p>
+                        <p className="text-xs leading-none text-muted-foreground">{userEmail}</p>
+                    </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
