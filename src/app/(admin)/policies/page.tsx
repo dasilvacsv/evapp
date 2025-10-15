@@ -69,6 +69,12 @@ export default function PoliciesPage() {
 
   const getStatusInfo = (status: string) => STATUS_MAP[status as keyof typeof STATUS_MAP] || { label: 'Desconocido', color: 'bg-gray-100 text-gray-800' };
   const getCommissionStatusInfo = (status: string) => COMMISSION_STATUS_MAP[status as keyof typeof COMMISSION_STATUS_MAP] || { label: 'Desconocido', color: 'bg-gray-100 text-gray-800' };
+  
+  const createPageURL = (pageNum: number) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('page', pageNum.toString());
+    return `?${params.toString()}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -163,11 +169,11 @@ export default function PoliciesPage() {
                           ) : (currentUserRole === 'super_admin' || currentUserRole === 'manager') ? (
                             <EnableEditingButton policyId={policy.id} />
                           ) : null}
-                          <Link href={`/policies/${policy.id}`}>
-                            <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link href={`/policies/${policy.id}`}>
                               <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
+                            </Link>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -179,39 +185,44 @@ export default function PoliciesPage() {
         </CardContent>
         {pagination.totalPages > 1 && (
           <div className="flex items-center justify-center space-x-2 p-6">
-            <Link
-              href={`?page=${Math.max(1, page - 1)}${search ? `&search=${search}` : ''}${status ? `&status=${status}` : ''}`}
-            >
-              <Button variant="outline" size="sm" disabled={page === 1}>
+            {page === 1 ? (
+              <Button variant="outline" size="sm" disabled>
                 <ChevronLeft className="h-4 w-4" /> Anterior
               </Button>
-            </Link>
+            ) : (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={createPageURL(page - 1)}>
+                  <ChevronLeft className="h-4 w-4" /> Anterior
+                </Link>
+              </Button>
+            )}
+            
             <div className="flex items-center space-x-1">
               {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
                 .filter(p => p === 1 || p === pagination.totalPages || (p >= page - 1 && p <= page + 1))
                 .map((pageNum, index, array) => (
                   <div key={pageNum} className="flex items-center">
                     {index > 0 && array[index - 1] + 1 < pageNum && <span className="text-muted-foreground mx-1">...</span>}
-                    <Link
-                      href={`?page=${pageNum}${search ? `&search=${search}` : ''}${status ? `&status=${status}` : ''}`}
-                    >
-                      <Button
-                        variant={pageNum === page ? 'default' : 'outline'}
-                        size="sm"
-                      >
+                    <Button variant={pageNum === page ? 'default' : 'outline'} size="sm" asChild>
+                      <Link href={createPageURL(pageNum)}>
                         {pageNum}
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </div>
                 ))}
             </div>
-            <Link
-              href={`?page=${Math.min(pagination.totalPages, page + 1)}${search ? `&search=${search}` : ''}${status ? `&status=${status}` : ''}`}
-            >
-              <Button variant="outline" size="sm" disabled={page === pagination.totalPages}>
+
+            {page === pagination.totalPages ? (
+              <Button variant="outline" size="sm" disabled>
                 Siguiente <ChevronRight className="h-4 w-4" />
               </Button>
-            </Link>
+            ) : (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={createPageURL(page + 1)}>
+                  Siguiente <ChevronRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
           </div>
         )}
       </Card>
