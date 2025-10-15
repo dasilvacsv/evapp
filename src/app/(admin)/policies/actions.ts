@@ -295,108 +295,108 @@ export async function updatePolicyStatus(data: z.infer<typeof updatePolicyStatus
 }
 
 export async function getPolicyById(id: string) {
-    const session = await auth();
-    const user = session?.user;
-    
-    if (!user) {
-        throw new Error('Unauthorized');
-    }
+    const session = await auth();
+    const user = session?.user;
+    
+    if (!user) {
+        throw new Error('Unauthorized');
+    }
 
-    try {
-        const agent = alias(users, 'agent');
-        const processor = alias(users, 'processor');
-        const sigDoc = alias(signatureDocuments, 'sigDoc');
+    try {
+        const agent = alias(users, 'agent');
+        const processor = alias(users, 'processor');
+        const sigDoc = alias(signatureDocuments, 'sigDoc');
 
-        const result = await db.query.policies.findFirst({
-            where: eq(policies.id, id),
-            with: {
-                customer: {
-                    columns: {
-                        createdByAgentId: true,
-                        fullName: true,
-                        email: true,
-                        phone: true,
-                        id: true,
-                    }
-                },
-                assignedProcessor: {
-                    columns: {
-                        firstName: true,
-                        lastName: true
-                    }
-                },
-            }
-        });
+        const result = await db.query.policies.findFirst({
+            where: sql`${policies.id} = ${id}::uuid`, // <-- CORRECCIÓN
+            with: {
+                customer: {
+                    columns: {
+                        createdByAgentId: true,
+                        fullName: true,
+                        email: true,
+                        phone: true,
+                        id: true,
+                    }
+                },
+                assignedProcessor: {
+                    columns: {
+                        firstName: true,
+                        lastName: true
+                    }
+                },
+            }
+        });
 
-        if (!result) {
-            throw new Error('Policy not found');
-        }
+        if (!result) {
+            throw new Error('Policy not found');
+        }
 
-        const policyData = { ...result };
+        const policyData = { ...result };
 
-        const isProcessed = !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policyData.status);
+        const isProcessed = !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policyData.status);
 
-        if (user.role === 'call_center' && isProcessed) {
-            return {
-                id: policyData.id,
-                status: policyData.status,
-                customerName: policyData.customer.fullName,
-                insuranceCompany: policyData.insuranceCompany,
-                monthlyPremium: policyData.monthlyPremium,
-                createdAt: policyData.createdAt,
-                effectiveDate: policyData.effectiveDate,
-                marketplaceId: 'Restringido',
-                taxCredit: null,
-                planLink: null,
-                aorLink: null,
-                notes: 'Información restringida post-venta.',
-                commissionStatus: 'Restringido',
-                updatedAt: policyData.updatedAt,
-                customerEmail: 'Restringido',
-                customerPhone: 'Restringido',
-                customerId: policyData.customer.id,
-                agentName: null,
-                processorName: null,
-                aorStatus: null,
-            };
-        }
+        if (user.role === 'call_center' && isProcessed) {
+            return {
+                id: policyData.id,
+                status: policyData.status,
+                customerName: policyData.customer.fullName,
+                insuranceCompany: policyData.insuranceCompany,
+                monthlyPremium: policyData.monthlyPremium,
+                createdAt: policyData.createdAt,
+                effectiveDate: policyData.effectiveDate,
+                marketplaceId: 'Restringido',
+                taxCredit: null,
+                planLink: null,
+                aorLink: null,
+                notes: 'Información restringida post-venta.',
+                commissionStatus: 'Restringido',
+                updatedAt: policyData.updatedAt,
+                customerEmail: 'Restringido',
+                customerPhone: 'Restringido',
+                customerId: policyData.customer.id,
+                agentName: null,
+                processorName: null,
+                aorStatus: null,
+            };
+        }
 
-        const fullPolicyDetails = await db.select({
-            id: policies.id,
-            status: policies.status,
-            insuranceCompany: policies.insuranceCompany,
-            monthlyPremium: policies.monthlyPremium,
-            marketplaceId: policies.marketplaceId,
-            effectiveDate: policies.effectiveDate,
-            taxCredit: policies.taxCredit,
-            planLink: policies.planLink,
-            aorLink: policies.aorLink,
-            notes: policies.notes,
-            commissionStatus: policies.commissionStatus,
-            createdAt: policies.createdAt,
-            updatedAt: policies.updatedAt,
-            customerName: customers.fullName,
-            customerEmail: customers.email,
-            customerPhone: customers.phone,
-            customerId: customers.id,
-            agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
-            processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
-            aorStatus: sigDoc.status,
-        })
-        .from(policies)
-        .innerJoin(customers, eq(policies.customerId, customers.id))
-        .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
-        .leftJoin(processor, eq(policies.assignedProcessorId, processor.id))
-        .leftJoin(sigDoc, eq(policies.aorDocumentId, sigDoc.id))
-        .where(eq(policies.id, id))
-        .limit(1);
-        
-        return fullPolicyDetails[0];
+        const fullPolicyDetails = await db.select({
+            id: policies.id,
+            status: policies.status,
+            insuranceCompany: policies.insuranceCompany,
+            monthlyPremium: policies.monthlyPremium,
+            marketplaceId: policies.marketplaceId,
+            effectiveDate: policies.effectiveDate,
+            taxCredit: policies.taxCredit,
+            planLink: policies.planLink,
+            aorLink: policies.aorLink,
+            notes: policies.notes,
+            commissionStatus: policies.commissionStatus,
+            createdAt: policies.createdAt,
+            updatedAt: policies.updatedAt,
+            customerName: customers.fullName,
+            customerEmail: customers.email,
+            customerPhone: customers.phone,
+            customerId: customers.id,
+            agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
+            processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
+            aorStatus: sigDoc.status,
+        })
+        .from(policies)
+        .innerJoin(customers, eq(policies.customerId, customers.id))
+        .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
+        .leftJoin(processor, eq(policies.assignedProcessorId, processor.id))
+        .leftJoin(sigDoc, eq(policies.aorDocumentId, sigDoc.id))
+        .where(sql`${policies.id} = ${id}::uuid`) // <-- CORRECCIÓN
+        .limit(1);
+        
+        return fullPolicyDetails[0];
 
-    } catch (error) {
-        console.error('Get policy error:', error);
-        throw new Error('Failed to fetch policy');
-    }
+    } catch (error) {
+        console.error('Get policy error:', error);
+        throw new Error('Failed to fetch policy');
+    }
 }
 
 export async function getAvailableProcessors() {
