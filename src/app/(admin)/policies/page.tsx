@@ -156,12 +156,6 @@ export default function PoliciesPage() {
                       <TableCell className="hidden lg:table-cell">{policy.agentName || 'N/A'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-1">
-                          
-                          {/* --- INICIO DE LA DEPURACIÓN --- */}
-                          {/* Hemos comentado temporalmente los botones de acción. */}
-                          {/* Si la página carga sin errores con este cambio, el problema */}
-                          {/* está 100% dentro de UpdateStatusForm o EnableEditingButton. */}
-                          {/*
                           {policy.isEditableStatus ? (
                             <UpdateStatusForm
                               policyId={policy.id}
@@ -175,15 +169,11 @@ export default function PoliciesPage() {
                           ) : (currentUserRole === 'super_admin' || currentUserRole === 'manager') ? (
                             <EnableEditingButton policyId={policy.id} />
                           ) : null}
-                          */}
-                          {/* --- FIN DE LA DEPURACIÓN --- */}
-                          
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/policies/${policy.id}`}>
                               <Eye className="h-4 w-4" />
                             </Link>
                           </Button>
-
                         </div>
                       </TableCell>
                     </TableRow>
@@ -193,7 +183,6 @@ export default function PoliciesPage() {
             )}
           </div>
         </CardContent>
-        {/* La paginación se mantiene igual que en la versión anterior y correcta */}
         {pagination.totalPages > 1 && (
           <div className="flex items-center justify-center space-x-2 p-6">
             {page === 1 ? (
@@ -207,6 +196,7 @@ export default function PoliciesPage() {
                 </Link>
               </Button>
             )}
+            
             <div className="flex items-center space-x-1">
               {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
                 .filter(p => p === 1 || p === pagination.totalPages || (p >= page - 1 && p <= page + 1))
@@ -221,6 +211,7 @@ export default function PoliciesPage() {
                   </div>
                 ))}
             </div>
+
             {page === pagination.totalPages ? (
               <Button variant="outline" size="sm" disabled>
                 Siguiente <ChevronRight className="h-4 w-4" />
