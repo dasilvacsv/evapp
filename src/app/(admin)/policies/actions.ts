@@ -303,65 +303,14 @@ export async function getPolicyById(id: string) {
     }
 
     try {
+        console.log('Searching for policy with ID:', id);
+        console.log('ID type:', typeof id);
+
         const agent = alias(users, 'agent');
         const processor = alias(users, 'processor');
-        const sigDoc = alias(signatureDocuments, 'sigDoc');
 
-        const result = await db.query.policies.findFirst({
-            where: sql`${policies.id} = ${id}::uuid`, // <-- CORRECCIÓN
-            with: {
-                customer: {
-                    columns: {
-                        createdByAgentId: true,
-                        fullName: true,
-                        email: true,
-                        phone: true,
-                        id: true,
-                    }
-                },
-                assignedProcessor: {
-                    columns: {
-                        firstName: true,
-                        lastName: true
-                    }
-                },
-            }
-        });
-
-        if (!result) {
-            throw new Error('Policy not found');
-        }
-
-        const policyData = { ...result };
-
-        const isProcessed = !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policyData.status);
-
-        if (user.role === 'call_center' && isProcessed) {
-            return {
-                id: policyData.id,
-                status: policyData.status,
-                customerName: policyData.customer.fullName,
-                insuranceCompany: policyData.insuranceCompany,
-                monthlyPremium: policyData.monthlyPremium,
-                createdAt: policyData.createdAt,
-                effectiveDate: policyData.effectiveDate,
-                marketplaceId: 'Restringido',
-                taxCredit: null,
-                planLink: null,
-                aorLink: null,
-                notes: 'Información restringida post-venta.',
-                commissionStatus: 'Restringido',
-                updatedAt: policyData.updatedAt,
-                customerEmail: 'Restringido',
-                customerPhone: 'Restringido',
-                customerId: policyData.customer.id,
-                agentName: null,
-                processorName: null,
-                aorStatus: null,
-            };
-        }
-
-        const fullPolicyDetails = await db.select({
+        // SOLUCIÓN: Usar sql con casting explícito
+        const policyResult = await db.select({
             id: policies.id,
             status: policies.status,
             insuranceCompany: policies.insuranceCompany,
@@ -381,20 +330,75 @@ export async function getPolicyById(id: string) {
             customerId: customers.id,
             agentName: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
             processorName: sql<string>`${processor.firstName} || ' ' || ${processor.lastName}`,
-            aorStatus: sigDoc.status,
+            createdByAgentId: customers.createdByAgentId, // AÑADIDO: necesario para canEditPolicy
         })
         .from(policies)
         .innerJoin(customers, eq(policies.customerId, customers.id))
         .leftJoin(agent, eq(customers.createdByAgentId, agent.id))
         .leftJoin(processor, eq(policies.assignedProcessorId, processor.id))
-        .leftJoin(sigDoc, eq(policies.aorDocumentId, sigDoc.id))
-        .where(sql`${policies.id} = ${id}::uuid`) // <-- CORRECCIÓN
+        .where(sql`${policies.id} = ${id}::uuid`) // CASTING EXPLÍCITO A UUID
         .limit(1);
-        
-        return fullPolicyDetails[0];
+
+        if (!policyResult[0]) {
+            throw new Error('Policy not found');
+        }
+
+        const policy = policyResult[0];
+
+        const isProcessed = !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policy.status);
+
+        // Si es call_center y está procesada, devolvemos vista limitada
+        if (user.role === 'call_center' && isProcessed) {
+            return {
+                id: policy.id,
+                status: policy.status,
+                customerName: policy.customerName,
+                insuranceCompany: policy.insuranceCompany,
+                monthlyPremium: policy.monthlyPremium,
+                createdAt: policy.createdAt,
+                effectiveDate: policy.effectiveDate,
+                marketplaceId: 'Restringido',
+                taxCredit: null,
+                planLink: null,
+                aorLink: null,
+                notes: 'Información restringida post-venta.',
+                commissionStatus: 'Restringido',
+                updatedAt: policy.updatedAt,
+                customerEmail: 'Restringido',
+                customerPhone: 'Restringido',
+                customerId: policy.customerId,
+                agentName: null,
+                processorName: null,
+                aorStatus: null,
+            };
+        }
+
+        // Obtenemos el estado AOR por separado si existe aorLink
+        let aorStatus = null;
+        if (policy.aorLink) {
+            // Buscamos el documento de firma relacionado con esta política
+            const aorDoc = await db.select({
+                status: signatureDocuments.status
+            })
+            .from(signatureDocuments)
+            .where(sql`${signatureDocuments.id}::text = ${policy.aorLink}`) // Asumiendo que aorLink es el ID del documento
+            .limit(1);
+            
+            aorStatus = aorDoc[0]?.status || null;
+        }
+
+        return {
+            ...policy,
+            aorStatus
+        };
 
     } catch (error) {
         console.error('Get policy error:', error);
+        // Para debugging más detallado
+        if (error instanceof Error) {
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+        }
         throw new Error('Failed to fetch policy');
     }
 }

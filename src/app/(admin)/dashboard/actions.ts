@@ -2,27 +2,13 @@
 
 'use server';
 
-// =================================================================
-// CAMBIOS REALIZADOS:
-// 1. **TeamPerformance Mejorado**: El tipo y la consulta ahora incluyen un desglose
-//    detallado del estado de las pólizas por agente (`statusBreakdown`), no solo activas.
-// 2. **Seguimiento de Miembros**:
-//    - Se añadió una nueva consulta (`memberTracking`) que cuenta al titular de la póliza
-//      más sus dependientes.
-//    - Calcula los totales para la última semana, quincena (15 días) y mes (30 días).
-// 3. **Tipos de Datos Actualizados**: Se actualizó el tipo `DashboardStats` para reflejar
-//    la nueva data.
-// 4. **Lógica de Filtrado**: Se aseguró que las nuevas consultas también respeten el
-//    filtrado por rol del usuario (agente, manager, etc.).
-// =================================================================
-
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { policies, customers, users, commissionRecords, dependents } from '@/db/schema';
 import { eq, count, sql, desc, and, inArray, gte, lte } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
-// 1. Define el tipo para la consulta de rendimiento del equipo (ACTUALIZADO)
+// Define el tipo para la consulta de rendimiento del equipo (MEJORADO)
 export type TeamPerformance = {
   agentId: string;
   agentName: string;
@@ -33,10 +19,16 @@ export type TeamPerformance = {
     in_review: number;
     approved: number;
     missing_docs: number;
+    sent_to_carrier: number;
+    rejected: number;
+    cancelled: number;
   };
+  monthlyRevenue: number;
+  conversionRate: number;
+  avgPolicyValue: number;
 };
 
-// 2. Define el tipo de retorno para la función principal (ACTUALIZADO)
+// Define el tipo de retorno para la función principal (MEJORADO)
 type DashboardStats = {
   totalCustomers: number;
   totalPolicies: number;
@@ -52,11 +44,43 @@ type DashboardStats = {
   }[];
   userRole: string;
   teamPerformance: TeamPerformance[];
-  // NUEVO: Objeto para el seguimiento de miembros
   memberTracking: {
     weekly: number;
     fortnightly: number;
     monthly: number;
+  };
+  // NUEVAS MÉTRICAS
+  monthlyTrends: {
+    currentMonth: {
+      policies: number;
+      customers: number;
+      revenue: number;
+    };
+    previousMonth: {
+      policies: number;
+      customers: number;
+      revenue: number;
+    };
+    growth: {
+      policies: number;
+      customers: number;
+      revenue: number;
+    };
+  };
+  topPerformers: {
+    agentId: string;
+    agentName: string;
+    score: number;
+  }[];
+  productBreakdown: {
+    [key: string]: number;
+  };
+  conversionFunnel: {
+    leads: number;
+    contacted: number;
+    inReview: number;
+    approved: number;
+    active: number;
   };
 };
 
@@ -81,16 +105,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     if (userRole === 'agent' || userRole === 'call_center') {
       whereClause = eq(customers.createdByAgentId, userId);
     } else if (userRole === 'manager') {
-       // Un manager ve las pólizas de los agentes que él gestiona
-      const managedAgentIds = await db.select({ id: users.id }).from(users).where(eq(users.managerId, userId));
+       const managedAgentIds = await db.select({ id: users.id }).from(users).where(eq(users.managerId, userId));
       if (managedAgentIds.length > 0) {
         whereClause = inArray(customers.createdByAgentId, managedAgentIds.map(u => u.id));
       } else {
-         // Si el manager no tiene agentes, no verá datos de clientes
         whereClause = sql`false`;
       }
     }
-    // Para super_admin, whereClause es undefined y se ven todos los datos.
 
     const customerIdsQuery = db.select({ id: customers.id }).from(customers).where(whereClause);
     const customerIdsResult = await customerIdsQuery;
@@ -124,10 +145,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .innerJoin(customers, eq(policies.customerId, customers.id))
     .where(whereClause)
     .orderBy(desc(policies.createdAt))
-    .limit(5);
+    .limit(10);
     recentPolicies = await recentPoliciesQuery;
 
-    // Métricas de rendimiento del equipo (solo para Manager y Super Admin)
+    // Métricas mejoradas de rendimiento del equipo
     if (userRole === 'manager' || userRole === 'super_admin') {
       let teamWhereClause;
       if (userRole === 'manager') {
@@ -140,13 +161,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
           agentName: sql<string>`concat(${users.firstName}, ' ', ${users.lastName})`,
           totalCustomers: sql<number>`count(distinct ${customers.id})::int`,
           totalPolicies: sql<number>`count(distinct ${policies.id})::int`,
-          // NUEVO: Desglose de estados
           statusBreakdown: {
             active: sql<number>`sum(case when ${policies.status} = 'active' then 1 else 0 end)::int`,
             in_review: sql<number>`sum(case when ${policies.status} = 'in_review' then 1 else 0 end)::int`,
             approved: sql<number>`sum(case when ${policies.status} = 'approved' then 1 else 0 end)::int`,
-            missing_docs: sql<number>`sum(case when ${policies.status} = 'missing_docs' then 1 else 0 end)::int`
-          }
+            missing_docs: sql<number>`sum(case when ${policies.status} = 'missing_docs' then 1 else 0 end)::int`,
+            sent_to_carrier: sql<number>`sum(case when ${policies.status} = 'sent_to_carrier' then 1 else 0 end)::int`,
+            rejected: sql<number>`sum(case when ${policies.status} = 'rejected' then 1 else 0 end)::int`,
+            cancelled: sql<number>`sum(case when ${policies.status} = 'cancelled' then 1 else 0 end)::int`,
+          },
+          monthlyRevenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+          conversionRate: sql<number>`
+            CASE 
+              WHEN COUNT(DISTINCT ${policies.id}) = 0 THEN 0
+              ELSE (COUNT(DISTINCT CASE WHEN ${policies.status} = 'active' THEN ${policies.id} END)::float / COUNT(DISTINCT ${policies.id})::float * 100)
+            END
+          `,
+          avgPolicyValue: sql<number>`
+            CASE 
+              WHEN COUNT(DISTINCT ${policies.id}) = 0 THEN 0
+              ELSE COALESCE(AVG(${policies.monthlyPremium}), 0)::float
+            END
+          `
         })
         .from(users)
         .leftJoin(customers, eq(customers.createdByAgentId, users.id))
@@ -158,14 +194,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       teamPerformance = teamPerformanceQuery;
     }
 
-    // NUEVO: Lógica para el seguimiento de miembros (titular + dependientes)
+    // Seguimiento de miembros mejorado
     const memberTracking = { weekly: 0, fortnightly: 0, monthly: 0 };
     if (customerIdList.length > 0) {
         const now = new Date();
         const periods = {
-            weekly: new Date(now.setDate(now.getDate() - 7)),
-            fortnightly: new Date(now.setDate(now.getDate() + 7 - 15)), // Reset date and subtract 15
-            monthly: new Date(now.setDate(now.getDate() + 15 - 30)), // Reset date and subtract 30
+            weekly: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+            fortnightly: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000),
+            monthly: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
         };
 
         for (const [period, startDate] of Object.entries(periods)) {
@@ -187,6 +223,86 @@ export async function getDashboardStats(): Promise<DashboardStats> {
             }
         }
     }
+
+    // NUEVAS MÉTRICAS: Tendencias mensuales
+    const currentMonth = new Date();
+    const previousMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+    const currentMonthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+
+    const currentMonthStats = await db
+      .select({
+        policies: sql<number>`COUNT(DISTINCT ${policies.id})::int`,
+        customers: sql<number>`COUNT(DISTINCT ${customers.id})::int`,
+        revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+      })
+      .from(policies)
+      .innerJoin(customers, eq(policies.customerId, customers.id))
+      .where(and(
+        whereClause,
+        gte(policies.createdAt, currentMonthStart)
+      ));
+
+    const previousMonthStats = await db
+      .select({
+        policies: sql<number>`COUNT(DISTINCT ${policies.id})::int`,
+        customers: sql<number>`COUNT(DISTINCT ${customers.id})::int`,
+        revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+      })
+      .from(policies)
+      .innerJoin(customers, eq(policies.customerId, customers.id))
+      .where(and(
+        whereClause,
+        gte(policies.createdAt, previousMonth),
+        lte(policies.createdAt, currentMonthStart)
+      ));
+
+    const current = currentMonthStats[0] || { policies: 0, customers: 0, revenue: 0 };
+    const previous = previousMonthStats[0] || { policies: 0, customers: 0, revenue: 0 };
+
+    const monthlyTrends = {
+      currentMonth: current,
+      previousMonth: previous,
+      growth: {
+        policies: previous.policies > 0 ? ((current.policies - previous.policies) / previous.policies) * 100 : 0,
+        customers: previous.customers > 0 ? ((current.customers - previous.customers) / previous.customers) * 100 : 0,
+        revenue: previous.revenue > 0 ? ((current.revenue - previous.revenue) / previous.revenue) * 100 : 0,
+      }
+    };
+
+    // Top performers
+    const topPerformers = teamPerformance
+      .map(agent => ({
+        agentId: agent.agentId,
+        agentName: agent.agentName,
+        score: agent.totalPolicies * 10 + agent.statusBreakdown.active * 15 + agent.conversionRate
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    // Product breakdown
+    const productBreakdownQuery = await db
+      .select({
+        product: policies.insuranceCompany,
+        count: count(),
+      })
+      .from(policies)
+      .innerJoin(customers, eq(policies.customerId, customers.id))
+      .where(whereClause)
+      .groupBy(policies.insuranceCompany);
+
+    const productBreakdown = productBreakdownQuery.reduce((acc, item) => {
+      acc[item.product || 'Otros'] = item.count;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Conversion funnel
+    const conversionFunnel = {
+      leads: policyStatusCounts.find(s => s.status === 'new_lead')?.count || 0,
+      contacted: policyStatusCounts.find(s => s.status === 'contacting')?.count || 0,
+      inReview: policyStatusCounts.find(s => s.status === 'in_review')?.count || 0,
+      approved: policyStatusCounts.find(s => s.status === 'approved')?.count || 0,
+      active: policyStatusCounts.find(s => s.status === 'active')?.count || 0,
+    };
 
     let totalCommissions = '0';
     if (userRole === 'commission_analyst' || userRole === 'super_admin') {
@@ -210,7 +326,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       })),
       userRole,
       teamPerformance,
-      memberTracking, // NUEVO: Devolver los datos de seguimiento
+      memberTracking,
+      monthlyTrends,
+      topPerformers,
+      productBreakdown,
+      conversionFunnel,
     };
   } catch (error) {
     console.error('Dashboard stats error:', error);

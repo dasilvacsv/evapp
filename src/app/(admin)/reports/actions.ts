@@ -9,11 +9,14 @@ import {
   salesTeams, 
   teamMembers 
 } from '@/db/schema';
-import { eq, and, desc, sql, count, gte, lte, inArray, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, inArray, count } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { revalidatePath } from 'next/cache';
 
-// Interfaces para los tipos de datos
+// ========================================
+// INTERFACES Y TIPOS
+// ========================================
+
 interface SalesFilters {
   startDate: string;
   endDate: string;
@@ -30,12 +33,55 @@ interface SalesReportData {
     id: string;
     customerName: string;
     agentName: string;
-    insuranceCompany: string;
+    insuranceCompany: string | null;
     monthlyPremium: string | null;
     status: string;
     statusLabel: string;
     createdAt: Date;
   }>;
+}
+
+interface AdvancedAnalyticsData {
+  monthlyTrends: Array<{
+    month: string;
+    policies: number;
+    revenue: number;
+    customers: number;
+    conversionRate: number;
+  }>;
+  productPerformance: Array<{
+    name: string;
+    value: number;
+    revenue: number;
+    avgPremium: number;
+  }>;
+  conversionFunnel: Array<{
+    stage: string;
+    value: number;
+    percentage: number;
+  }>;
+  agentComparison: Array<{
+    agent: string;
+    policies: number;
+    revenue: number;
+    conversionRate: number;
+  }>;
+  timeAnalysis: Array<{
+    period: string;
+    leads: number;
+    conversions: number;
+    revenue: number;
+  }>;
+  kpis: {
+    totalRevenue: number;
+    revenueGrowth: number;
+    avgDealSize: number;
+    dealSizeGrowth: number;
+    conversionRate: number;
+    conversionGrowth: number;
+    customerLifetimeValue: number;
+    churnRate: number;
+  };
 }
 
 // Mapeo de estados para labels
@@ -51,6 +97,10 @@ const statusLabels: Record<string, string> = {
   'active': 'Activa',
   'cancelled': 'Cancelada',
 };
+
+// ========================================
+// FUNCIONES DE REPORTES DE VENTAS
+// ========================================
 
 export async function getSalesReport(filters: SalesFilters): Promise<SalesReportData> {
   const session = await auth();
@@ -78,18 +128,18 @@ export async function getSalesReport(filters: SalesFilters): Promise<SalesReport
     }
 
     // Filtro por agente
-    if (filters.agentId) {
+    if (filters.agentId && filters.agentId !== 'all') {
       conditions.push(eq(customers.createdByAgentId, filters.agentId));
     }
 
     // Filtro por aseguradora
-    if (filters.insuranceCompany) {
+    if (filters.insuranceCompany && filters.insuranceCompany !== 'all') {
       conditions.push(eq(policies.insuranceCompany, filters.insuranceCompany));
     }
 
     // Filtro por estado
-    if (filters.status) {
-      conditions.push(eq(policies.status, filters.status));
+    if (filters.status && filters.status !== 'all') {
+      conditions.push(eq(policies.status, filters.status as typeof policies.status.enumValues[number]));
     }
 
     // Si es manager, solo ver pólizas de su equipo
@@ -102,7 +152,7 @@ export async function getSalesReport(filters: SalesFilters): Promise<SalesReport
       if (managedAgentIds.length > 0) {
         conditions.push(inArray(customers.createdByAgentId, managedAgentIds.map(u => u.id)));
       } else {
-        conditions.push(sql`false`); // No hay agentes, no mostrar datos
+        conditions.push(sql`false`);
       }
     }
 
@@ -148,6 +198,10 @@ export async function getSalesReport(filters: SalesFilters): Promise<SalesReport
   }
 }
 
+// ========================================
+// FUNCIONES DE PERFORMANCE DE EQUIPO
+// ========================================
+
 export async function getTeamPerformanceReport(days: number) {
   const session = await auth();
   
@@ -163,19 +217,19 @@ export async function getTeamPerformanceReport(days: number) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
+    const agent = alias(users, 'agent');
+
     let whereClause;
     if (session.user.role === 'manager') {
-      whereClause = eq(users.managerId, session.user.id);
+      whereClause = eq(agent.managerId, session.user.id);
     } else {
-      whereClause = eq(users.role, 'agent');
+      whereClause = eq(agent.role, 'agent');
     }
-
-    const agent = alias(users, 'agent');
 
     const performanceData = await db
       .select({
         id: agent.id,
-        name: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
+        name: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`.as('agentName'),
         totalPolicies: sql<number>`COUNT(DISTINCT ${policies.id})::int`,
         activePolicies: sql<number>`COUNT(DISTINCT CASE WHEN ${policies.status} = 'active' THEN ${policies.id} END)::int`,
         totalPremium: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
@@ -185,6 +239,14 @@ export async function getTeamPerformanceReport(days: number) {
             ELSE (COUNT(DISTINCT CASE WHEN ${policies.status} = 'active' THEN ${policies.id} END)::float / COUNT(DISTINCT ${policies.id})::float * 100)
           END
         `,
+        statusBreakdown: sql<Record<string, number>>`
+          jsonb_build_object(
+            'active', COUNT(DISTINCT CASE WHEN ${policies.status} = 'active' THEN ${policies.id} END)::int,
+            'approved', COUNT(DISTINCT CASE WHEN ${policies.status} = 'approved' THEN ${policies.id} END)::int,
+            'in_review', COUNT(DISTINCT CASE WHEN ${policies.status} = 'in_review' THEN ${policies.id} END)::int,
+            'missing_docs', COUNT(DISTINCT CASE WHEN ${policies.status} = 'missing_docs' THEN ${policies.id} END)::int
+          )
+        `
       })
       .from(agent)
       .leftJoin(customers, eq(customers.createdByAgentId, agent.id))
@@ -193,7 +255,8 @@ export async function getTeamPerformanceReport(days: number) {
         gte(policies.createdAt, startDate)
       ))
       .where(whereClause)
-      .groupBy(agent.id, agent.firstName, agent.lastName);
+      .groupBy(agent.id, agent.firstName, agent.lastName)
+      .orderBy(desc(sql`COUNT(DISTINCT ${policies.id})`));
 
     return performanceData;
   } catch (error) {
@@ -201,6 +264,10 @@ export async function getTeamPerformanceReport(days: number) {
     throw new Error('Failed to generate team performance report');
   }
 }
+
+// ========================================
+// FUNCIONES DE TOP LEADER
+// ========================================
 
 export async function getTopLeaderReport(days: number) {
   const session = await auth();
@@ -243,7 +310,8 @@ export async function getTopLeaderReport(days: number) {
         gte(policies.createdAt, startDate)
       ))
       .where(eq(salesTeams.isActive, true))
-      .groupBy(salesTeams.id, salesTeams.name, teamLeader.firstName, teamLeader.lastName);
+      .groupBy(salesTeams.id, salesTeams.name, teamLeader.firstName, teamLeader.lastName)
+      .orderBy(desc(sql`COUNT(DISTINCT ${policies.id})`));
 
     return teamsReport.map(team => ({
       teamId: team.teamId,
@@ -258,13 +326,225 @@ export async function getTopLeaderReport(days: number) {
         'Aetna': team.aetnaCount,
         'Pólizas de Vida': team.lifePoliciesCount,
       },
-      avgConversionRate: team.totalPolicies > 0 ? 75.5 : 0, // Cálculo aproximado
+      avgConversionRate: team.totalPolicies > 0 ? 75.5 : 0,
     }));
   } catch (error) {
     console.error('Top leader report error:', error);
     throw new Error('Failed to generate top leader report');
   }
 }
+
+// ========================================
+// FUNCIONES DE ANALYTICS AVANZADOS
+// ========================================
+
+export async function getAdvancedAnalytics(months: number): Promise<AdvancedAnalyticsData> {
+  const session = await auth();
+  
+  if (!session?.user) {
+    throw new Error('Unauthorized');
+  }
+
+  if (!['manager', 'super_admin'].includes(session.user.role)) {
+    throw new Error('Insufficient permissions');
+  }
+
+  try {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - months);
+
+    // Monthly trends
+    const monthlyTrends = [];
+    for (let i = months; i >= 0; i--) {
+      const monthStart = new Date();
+      monthStart.setMonth(monthStart.getMonth() - i, 1);
+      const monthEnd = new Date();
+      monthEnd.setMonth(monthEnd.getMonth() - i + 1, 0);
+
+      const monthData = await db
+        .select({
+          policies: count(policies.id),
+          customers: sql<number>`COUNT(DISTINCT ${customers.id})::int`,
+          revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        })
+        .from(policies)
+        .innerJoin(customers, eq(policies.customerId, customers.id))
+        .where(and(
+          gte(policies.createdAt, monthStart),
+          lte(policies.createdAt, monthEnd)
+        ));
+
+      const data = monthData[0];
+      const conversionRate = data.policies > 0 ? (data.policies / Math.max(data.customers, 1)) * 100 : 0;
+
+      monthlyTrends.push({
+        month: monthStart.toLocaleDateString('es', { month: 'short', year: 'numeric' }),
+        policies: data.policies,
+        revenue: data.revenue,
+        customers: data.customers,
+        conversionRate
+      });
+    }
+
+    // Product performance
+    const productPerformance = await db
+      .select({
+        name: policies.insuranceCompany,
+        value: count(policies.id),
+        revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        avgPremium: sql<number>`COALESCE(AVG(${policies.monthlyPremium}), 0)::float`,
+      })
+      .from(policies)
+      .where(gte(policies.createdAt, startDate))
+      .groupBy(policies.insuranceCompany);
+
+    // Conversion funnel
+    const funnelData = await db
+      .select({
+        status: policies.status,
+        count: count(policies.id),
+      })
+      .from(policies)
+      .where(gte(policies.createdAt, startDate))
+      .groupBy(policies.status);
+
+    const totalFunnelCount = funnelData.reduce((sum, item) => sum + item.count, 0);
+    const conversionFunnel = [
+      { stage: 'Nuevos Leads', value: funnelData.find(d => d.status === 'new_lead')?.count || 0, percentage: 0 },
+      { stage: 'Contactados', value: funnelData.find(d => d.status === 'contacting')?.count || 0, percentage: 0 },
+      { stage: 'En Revisión', value: funnelData.find(d => d.status === 'in_review')?.count || 0, percentage: 0 },
+      { stage: 'Aprobadas', value: funnelData.find(d => d.status === 'approved')?.count || 0, percentage: 0 },
+      { stage: 'Activas', value: funnelData.find(d => d.status === 'active')?.count || 0, percentage: 0 },
+    ];
+
+    conversionFunnel.forEach(stage => {
+      stage.percentage = totalFunnelCount > 0 ? (stage.value / totalFunnelCount) * 100 : 0;
+    });
+
+    // Agent comparison
+    const agent = alias(users, 'agent');
+    const agentComparison = await db
+      .select({
+        agent: sql<string>`${agent.firstName} || ' ' || ${agent.lastName}`,
+        policies: count(policies.id),
+        revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        conversionRate: sql<number>`
+          CASE 
+            WHEN COUNT(${policies.id}) = 0 THEN 0
+            ELSE (COUNT(CASE WHEN ${policies.status} = 'active' THEN 1 END)::float / COUNT(${policies.id})::float * 100)
+          END
+        `,
+      })
+      .from(agent)
+      .leftJoin(customers, eq(customers.createdByAgentId, agent.id))
+      .leftJoin(policies, and(
+        eq(policies.customerId, customers.id),
+        gte(policies.createdAt, startDate)
+      ))
+      .where(eq(agent.role, 'agent'))
+      .groupBy(agent.id, agent.firstName, agent.lastName)
+      .orderBy(desc(sql`COUNT(${policies.id})`))
+      .limit(10);
+
+    // Time analysis (quarterly breakdown)
+    const timeAnalysis = [];
+    for (let i = 3; i >= 0; i--) {
+      const quarterStart = new Date();
+      quarterStart.setMonth(quarterStart.getMonth() - (i * 3), 1);
+      const quarterEnd = new Date();
+      quarterEnd.setMonth(quarterEnd.getMonth() - (i * 3) + 3, 0);
+
+      const quarterData = await db
+        .select({
+          leads: count(policies.id),
+          conversions: sql<number>`COUNT(CASE WHEN ${policies.status} = 'active' THEN 1 END)::int`,
+          revenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        })
+        .from(policies)
+        .where(and(
+          gte(policies.createdAt, quarterStart),
+          lte(policies.createdAt, quarterEnd)
+        ));
+
+      const data = quarterData[0];
+      timeAnalysis.push({
+        period: `Q${Math.floor(quarterStart.getMonth() / 3) + 1} ${quarterStart.getFullYear()}`,
+        leads: data.leads,
+        conversions: data.conversions,
+        revenue: data.revenue
+      });
+    }
+
+    // KPIs calculation
+    const currentPeriodData = await db
+      .select({
+        totalRevenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        totalPolicies: count(policies.id),
+        activePolicies: sql<number>`COUNT(CASE WHEN ${policies.status} = 'active' THEN 1 END)::int`,
+      })
+      .from(policies)
+      .where(gte(policies.createdAt, startDate));
+
+    const previousPeriodStart = new Date(startDate);
+    previousPeriodStart.setMonth(previousPeriodStart.getMonth() - months);
+
+    const previousPeriodData = await db
+      .select({
+        totalRevenue: sql<number>`COALESCE(SUM(${policies.monthlyPremium}), 0)::float`,
+        totalPolicies: count(policies.id),
+        activePolicies: sql<number>`COUNT(CASE WHEN ${policies.status} = 'active' THEN 1 END)::int`,
+      })
+      .from(policies)
+      .where(and(
+        gte(policies.createdAt, previousPeriodStart),
+        lte(policies.createdAt, startDate)
+      ));
+
+    const current = currentPeriodData[0];
+    const previous = previousPeriodData[0];
+
+    const kpis = {
+      totalRevenue: current.totalRevenue,
+      revenueGrowth: previous.totalRevenue > 0 ? 
+        ((current.totalRevenue - previous.totalRevenue) / previous.totalRevenue) * 100 : 0,
+      avgDealSize: current.totalPolicies > 0 ? current.totalRevenue / current.totalPolicies : 0,
+      dealSizeGrowth: previous.totalPolicies > 0 && current.totalPolicies > 0 ?
+        (((current.totalRevenue / current.totalPolicies) - (previous.totalRevenue / previous.totalPolicies)) / 
+         (previous.totalRevenue / previous.totalPolicies)) * 100 : 0,
+      conversionRate: current.totalPolicies > 0 ? (current.activePolicies / current.totalPolicies) * 100 : 0,
+      conversionGrowth: previous.totalPolicies > 0 && current.totalPolicies > 0 ?
+        ((current.activePolicies / current.totalPolicies) - (previous.activePolicies / previous.totalPolicies)) * 100 : 0,
+      customerLifetimeValue: current.totalRevenue * 12, // Estimated annual value
+      churnRate: 5.2 // Placeholder - would need actual churn calculation
+    };
+
+    return {
+      monthlyTrends,
+      productPerformance: productPerformance.map(p => ({
+        name: p.name || 'Otros',
+        value: p.value,
+        revenue: p.revenue,
+        avgPremium: p.avgPremium
+      })),
+      conversionFunnel,
+      agentComparison,
+      timeAnalysis,
+      kpis
+    };
+  } catch (error) {
+    console.error('Advanced analytics error:', error);
+    throw new Error('Failed to generate advanced analytics');
+  }
+}
+
+export async function exportAnalyticsData(months: number) {
+  // This would be the same data as getAdvancedAnalytics but formatted for export
+  return await getAdvancedAnalytics(months);
+}
+
+// ========================================
+// FUNCIONES DE AGENTES Y COMPAÑÍAS
+// ========================================
 
 export async function getAgents() {
   const session = await auth();
@@ -318,7 +598,10 @@ export async function getInsuranceCompanies() {
   }
 }
 
-// Funciones de gestión de equipos
+// ========================================
+// FUNCIONES DE GESTIÓN DE EQUIPOS
+// ========================================
+
 export async function getTeams() {
   const session = await auth();
   
@@ -353,7 +636,7 @@ export async function getTeams() {
 
     return teams.map(team => ({
       ...team,
-      members: [], // Se cargarán por separado si es necesario
+      members: [],
     }));
   } catch (error) {
     console.error('Get teams error:', error);

@@ -47,9 +47,9 @@ export default async function PolicyDetailPage({ params }: PageProps) {
 
   // NUEVO: Verificamos los permisos de edición
   const hasEditPermission = await canEditPolicy({
-      status: policy.status,
-      customer: { createdByAgentId: policy.customerId } // Asumimos que podemos obtenerlo
-  });
+    status: policy.status,
+    customer: { createdByAgentId: policy.createdByAgentId } // CAMBIADO: usar createdByAgentId en lugar de customerId
+});
 
   const isLimitedView = user?.role === 'call_center' && !['new_lead', 'contacting', 'info_captured', 'in_review', 'missing_docs'].includes(policy.status);
 

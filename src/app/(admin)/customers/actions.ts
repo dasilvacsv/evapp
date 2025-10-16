@@ -361,156 +361,162 @@ export async function getCustomers(page = 1, limit = 10, search = '') {
 }
 
 export async function getCustomerDetails(customerId: string) {
-    const session = await auth();
-    const user = session?.user;
-    if (!user?.id || !user.role) {
-        throw new Error("No autorizado");
-    }
+    const session = await auth();
+    const user = session?.user;
+    
+    // 1. Verificar si el usuario está autenticado
+    if (!user?.id || !user.role) {
+        // NO lanzar error, devolver null para que el cliente lo maneje como "Acceso Denegado"
+        return null; 
+    }
 
-    try {
-        const customerDetails = await db.query.customers.findFirst({
-            where: eq(customers.id, customerId),
-            with: {
-                createdByAgent: {
-                    columns: {
-                        firstName: true,
-                        lastName: true,
-                        name: true
-                    }
-                },
-                // NUEVA RELACIÓN: Personas declaradas
-                declaredPeople: {
-                    orderBy: [desc(declaredPeople.createdAt)]
-                },
-                dependents: {
-                    with: {
-                        documents: {
-                            with: {
-                                uploadedByUser: {
-                                    columns: {
-                                        firstName: true,
-                                        lastName: true,
-                                        name: true,
-                                    }
-                                }
-                            },
-                            orderBy: [desc(documents.createdAt)]
-                        }
-                    },
-                    orderBy: [desc(dependents.createdAt)]
-                },
-                documents: {
-                    where: sql`${documents.dependentId} IS NULL`,
-                    with: {
-                        uploadedByUser: {
-                            columns: {
-                                firstName: true,
-                                lastName: true,
-                                name: true
-                            }
-                        }
-                    },
-                    orderBy: [desc(documents.createdAt)]
-                },
-                policies: {
-                    columns: {
-                        id: true,
-                        customerId: true,
-                        status: true,
-                        insuranceCompany: true,
-                        monthlyPremium: true,
-                        marketplaceId: true,
-                        planName: true,
-                        effectiveDate: true,
-                        planLink: true,
-                        taxCredit: true,
-                        aorLink: true,
-                        aorDocumentId: true,
-                        notes: true,
-                        assignedProcessorId: true,
-                        commissionStatus: true,
-                        createdAt: true,
-                        updatedAt: true,
-                    },
-                    with: {
-                        assignedProcessor: {
-                            columns: {
-                                firstName: true,
-                                lastName: true,
-                                name: true
-                            }
-                        },
-                        paymentMethod: true,
-                        claims: {
-                            orderBy: [desc(claims.dateFiled)]
-                        },
-                        appointments: {
-                            orderBy: [desc(appointments.appointmentDate)]
-                        }
-                    },
-                    orderBy: [desc(policies.createdAt)]
-                },
-                tasks: {
-                    with: {
-                        assignedTo: {
-                            columns: { firstName: true, lastName: true, name: true }
-                        },
-                        createdBy: {
-                            columns: { firstName: true, lastName: true, name: true }
-                        },
-                        comments: {
-                            with: {
-                                createdBy: {
-                                    columns: { firstName: true, lastName: true, name: true }
-                                }
-                            },
-                            orderBy: [desc(taskComments.createdAt)]
-                        }
-                    },
-                    orderBy: [desc(customerTasks.createdAt)]
-                },
-                generatedDocuments: {
-                    with: {
-                        template: true,
-                        generatedBy: {
-                            columns: { firstName: true, lastName: true, name: true }
-                        }
-                    },
-                    orderBy: [desc(generatedDocuments.createdAt)]
-                }
-            }
-        });
+    try {
+        const customerDetails = await db.query.customers.findFirst({
+            where: eq(customers.id, customerId),
+            with: {
+                createdByAgent: {
+                    columns: {
+                        firstName: true,
+                        lastName: true,
+                        name: true
+                    }
+                },
+                // NUEVA RELACIÓN: Personas declaradas
+                declaredPeople: {
+                    orderBy: [desc(declaredPeople.createdAt)]
+                },
+                dependents: {
+                    with: {
+                        documents: {
+                            with: {
+                                uploadedByUser: {
+                                    columns: {
+                                        firstName: true,
+                                        lastName: true,
+                                        name: true,
+                                    }
+                                }
+                            },
+                            orderBy: [desc(documents.createdAt)]
+                        }
+                    },
+                    orderBy: [desc(dependents.createdAt)]
+                },
+                documents: {
+                    where: sql`${documents.dependentId} IS NULL`,
+                    with: {
+                        uploadedByUser: {
+                            columns: {
+                                firstName: true,
+                                lastName: true,
+                                name: true
+                            }
+                        }
+                    },
+                    orderBy: [desc(documents.createdAt)]
+                },
+                policies: {
+                    columns: {
+                        id: true,
+                        customerId: true,
+                        status: true,
+                        insuranceCompany: true,
+                        monthlyPremium: true,
+                        marketplaceId: true,
+                        planName: true,
+                        effectiveDate: true,
+                        planLink: true,
+                        taxCredit: true,
+                        aorLink: true,
+                        aorDocumentId: true,
+                        notes: true,
+                        assignedProcessorId: true,
+                        commissionStatus: true,
+                        createdAt: true,
+                        updatedAt: true,
+                    },
+                    with: {
+                        assignedProcessor: {
+                            columns: {
+                                firstName: true,
+                                lastName: true,
+                                name: true
+                            }
+                        },
+                        paymentMethod: true,
+                        claims: {
+                            orderBy: [desc(claims.dateFiled)]
+                        },
+                        appointments: {
+                            orderBy: [desc(appointments.appointmentDate)]
+                        }
+                    },
+                    orderBy: [desc(policies.createdAt)]
+                },
+                tasks: {
+                    with: {
+                        assignedTo: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        },
+                        createdBy: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        },
+                        comments: {
+                            with: {
+                                createdBy: {
+                                    columns: { firstName: true, lastName: true, name: true }
+                                }
+                            },
+                            orderBy: [desc(taskComments.createdAt)]
+                        }
+                    },
+                    orderBy: [desc(customerTasks.createdAt)]
+                },
+                generatedDocuments: {
+                    with: {
+                        template: true,
+                        generatedBy: {
+                            columns: { firstName: true, lastName: true, name: true }
+                        }
+                    },
+                    orderBy: [desc(generatedDocuments.createdAt)]
+                }
+            }
+        });
 
-        if (!customerDetails) {
-            return null;
-        }
+        if (!customerDetails) {
+            return null; // Cliente no encontrado
+        }
 
-        // Verificar permisos de acceso
-        if (!canAccessCustomerDetails(user, customerDetails)) {
-            throw new Error("Acceso denegado.");
-        }
+        // 2. Verificar permisos de acceso
+        if (!canAccessCustomerDetails(user, customerDetails)) {
+            console.error(`Acceso denegado. Usuario: ${user.id} (${user.role}). Cliente: ${customerId}`);
+            // CAMBIO CLAVE: Devolver null en lugar de lanzar un error.
+            return null; 
+        }
 
-        // NUEVA LÓGICA: Si es call center y está en procesamiento, limitar información
-        if (user.role === 'call_center' && customerDetails.processingStartedAt) {
-            return {
-                ...customerDetails,
-                // Mantener solo información básica
-                documents: [],
-                dependents: customerDetails.dependents.map(dep => ({
-                    ...dep,
-                    documents: []
-                })),
-                declaredPeople: [], // Ocultar personas declaradas
-                tasks: customerDetails.tasks.filter(task => task.assignedToId === user.id), // Solo sus tareas
-            };
-        }
+        // NUEVA LÓGICA: Si es call center y está en procesamiento, limitar información
+        if (user.role === 'call_center' && customerDetails.processingStartedAt) {
+            return {
+                ...customerDetails,
+                // Mantener solo información básica
+                documents: [],
+                dependents: customerDetails.dependents.map(dep => ({
+                    ...dep,
+                    documents: []
+                })),
+                declaredPeople: [], // Ocultar personas declaradas
+                tasks: customerDetails.tasks.filter(task => task.assignedToId === user.id), // Solo sus tareas
+            };
+        }
 
-        return customerDetails;
+        return customerDetails;
 
-    } catch (error) {
-        console.error("Error al obtener detalles del cliente:", error);
-        throw new Error("No se pudieron obtener los detalles del cliente.");
-    }
+    } catch (error) {
+        console.error("Error al obtener detalles del cliente:", error);
+        // Si ocurre un error inesperado (ej. DB), lanzamos un error que el cliente puede capturar.
+        throw new Error("No se pudieron obtener los detalles del cliente.");
+    }
 }
 
 export async function getDocumentUrl(s3Key: string) {
